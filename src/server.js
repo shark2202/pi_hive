@@ -195,6 +195,8 @@ export class PiHiveServer {
     // Model runtime is created lazily: serving the compatibility shell and
     // static frontend must work without an LLM key configured.
     this._modelRuntime = options.modelRuntime || null;
+    // An injected runtime belongs to the caller: model writes cannot swap it.
+    this._modelRuntimeIsInjected = Boolean(options.modelRuntime);
     this.frontendDist = path.resolve(
       options.frontendDist || process.env.HIVE_FRONTEND_DIST || DEFAULT_FRONTEND_DIST,
     );
@@ -209,6 +211,21 @@ export class PiHiveServer {
   get modelRuntime() {
     if (!this._modelRuntime) this._modelRuntime = createModelRuntime();
     return this._modelRuntime;
+  }
+
+  /**
+   * A model write changes what the next runtime is built from: drop the cached
+   * env-derived runtime and every colony runtime, so the next turn of each live
+   * session constructs its agent against the saved model. Returns how many
+   * colony runtimes were dropped.
+   */
+  swapModelRuntime() {
+    if (this._modelRuntimeIsInjected) return 0;
+    this._modelRuntime = null;
+    const dropped = this.runtimes.size;
+    for (const runtime of this.runtimes.values()) runtime.stop();
+    this.runtimes.clear();
+    return dropped;
   }
 
   runtime(name) {

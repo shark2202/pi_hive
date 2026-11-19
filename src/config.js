@@ -1,6 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
+import { readLlmOverride } from "./domain/config-store.js";
 
 export const PI_HIVE_VERSION = "0.1.0";
 
@@ -25,8 +26,10 @@ export function ensureDir(dir) {
 }
 
 export function modelConfig() {
-  const baseUrl = process.env.PI_HIVE_BASE_URL || "https://token.tokenbroad.com/v1";
-  const modelId = process.env.PI_HIVE_MODEL || "deepseek-flash-1017";
+  // A saved /api/config/llm write outranks the environment for the next runtime.
+  const saved = readLlmOverride();
+  const baseUrl = saved?.api_base || process.env.PI_HIVE_BASE_URL || "https://token.tokenbroad.com/v1";
+  const modelId = saved?.model || process.env.PI_HIVE_MODEL || "deepseek-flash-1017";
   const apiKey = process.env.PI_HIVE_API_KEY || process.env.BROADTOKEN_API_KEY || "";
   return { baseUrl, modelId, apiKey };
 }

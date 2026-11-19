@@ -34,22 +34,13 @@ import { registerStreamRoutes } from "./handlers/streams.js";
 
 /**
  * Writes that answer an explicit `400 unsupported_capability` because pi_hive
- * has no backing subsystem (no feature-flag store, provider library, model
- * slot registry, credential vault, profile store, or parked-session
- * credential form). They are partial compatibility, not implemented routes:
- * the official client gets a real, documented refusal instead of a 501, but
- * the mutation does not happen.
+ * has no backing subsystem (no model-endpoint registry, credential vault, local
+ * credential registry, Aden sync, or parked-session credential form). They are
+ * partial compatibility, not implemented routes: the official client gets a
+ * real, documented refusal instead of a 501, but the mutation does not happen.
+ * Config writes are not in this list — they persist under `hiveHome()/config/`.
  */
 const CONFIG_EXTRA_UNSUPPORTED_WRITES = new Set([
-  "PUT /api/config/llm-sections",
-  "PUT /api/config/provider-library",
-  "POST /api/config/provider-library/apply",
-  "PUT /api/config/external-skills",
-  "PUT /api/config/features",
-  "PUT /api/config/llm",
-  "PUT /api/config/profile",
-  "PUT /api/config/rate-limits",
-  "POST /api/config/profile/avatar",
   "PUT /api/models/slots/:slot",
   "DELETE /api/models/slots/:slot",
   "PUT /api/models/endpoints/:endpoint",

@@ -10,12 +10,18 @@
  * pi_hive's reality defines the answers:
  *
  *   - one model, configured by `PI_HIVE_MODEL` / `PI_HIVE_BASE_URL` /
- *     `PI_HIVE_API_KEY` in `src/config.js`; there is no writable configuration
- *     file and no session hot-swap;
- *   - no provider library, external-skill store, feature flags, user profile,
- *     social rate limiter, avatar store, model-endpoint registry, credential
- *     vault, local credential registry, Aden sync, or parked-session credential
- *     forms.
+ *     `PI_HIVE_API_KEY`; a saved `/api/config/llm` write overrides those
+ *     environment values for every runtime built afterwards;
+ *   - provider slots, the provider library, external skill roots, feature
+ *     flags, the user profile, rate limits and the profile avatar are durable
+ *     under `hiveHome()/config/` (`src/domain/config-store.js`). No secret is
+ *     ever stored: a section carrying `api_key` is refused.
+ *   - no model-endpoint registry, credential vault, local credential registry,
+ *     Aden sync, or parked-session credential forms, so those mutations keep
+ *     answering **400** with `{ error, type: "unsupported_capability", route,
+ *     capability }` — an explicit refusal, never the shell's 501. The only
+ *     network-free key check is `POST /api/credentials/validate-key`, which
+ *     compares a submitted key with the configured pi_hive key in memory.
  *
  * Reads therefore return the real model/limit values from `modelConfig()` or a
  * documented empty collection. Every mutation whose capability does not exist
@@ -34,8 +40,28 @@ import os from "node:os";
 import path from "node:path";
 
 import { ROUTE_STATUS } from "../router.js";
-import { modelConfig } from "../../config.js";
-import { buildCredentialSpecs, buildLLMConfig, buildModelsCatalogue } from "./config.js";
+import { coloniesDir, modelConfig } from "../../config.js";
+import {
+  FEATURE_KEYS,
+  MAX_AVATAR_BYTES,
+  readAvatar,
+  readLibrary,
+  readLlmOverride,
+  readRateLimits,
+  readSections,
+  readSkillPaths,
+  saveAvatar,
+  sectionError,
+  setLibraryEntry,
+  writeFeatures,
+  writeLlmOverride,
+  writeProfile,
+  writeRateLimits,
+  writeSection,
+  writeSkillPaths,
+} from "../../domain/config-store.js";
+import { parseMultipart } from "./sessions.js";
+import { buildCredentialSpecs, buildFeatures, buildLLMConfig, buildModelsCatalogue } from "./config.js";
 
 /** Official provider-slot names (core/frontend/src/api/config.ts `LlmRole`). */
 const ROLE_SLOTS = Object.freeze(["llm", "worker_llm", "vision_fallback", "judge"]);
@@ -77,39 +103,71 @@ export function buildStartupStatus() {
  */
 export function buildLlmSections() {
   const llm = buildLLMConfig();
+  const stored = readSections();
+  const slot = {
+    provider: llm.provider,
+    model: llm.model,
+    api_base: llm.api_base,
+    api_key_env_var: llm.api_key_env_var,
+    max_tokens: llm.max_tokens,
+    max_context_tokens: llm.max_context_tokens,
+  };
+  // A saved llm slot may carry extra keys; the runtime-relevant ones already
+  // went through modelConfig(), so they agree with what is displayed here.
+  for (const [key, value] of Object.entries(stored.llm ?? {})) {
+    if (key !== "api_key" && value !== undefined) slot[key] = value;
+  }
   return {
-    llm: {
-      provider: llm.provider,
-      model: llm.model,
-      api_base: llm.api_base,
-      api_key_env_var: llm.api_key_env_var,
-      max_tokens: llm.max_tokens,
-      max_context_tokens: llm.max_context_tokens,
-    },
-    // pi_hive has no worker, vision, or judge slot.
-    worker_llm: null,
-    vision_fallback: null,
-    judge: null,
+    llm: slot,
+    // pi_hive records these slots; it runs no worker, vision, or judge model.
+    worker_llm: stored.worker_llm ?? null,
+    vision_fallback: stored.vision_fallback ?? null,
+    judge: stored.judge ?? null,
   };
 }
 
-/** Official `{ library }`. pi_hive stores no named vendor configs. */
+/** Official `{ library }`: named vendor configs, saved under the config dir. */
 export function buildProviderLibrary() {
-  return { library: {} };
+  return { library: readLibrary() };
+}
+
+/** Expand `~` and resolve a configured skill root into its on-disk status. */
+function resolveSkillPath(raw) {
+  const expanded = raw === "~" || raw.startsWith("~/") ? path.join(os.homedir(), raw.slice(2)) : raw;
+  const abs = path.resolve(expanded);
+  try {
+    if (!fs.statSync(abs).isDirectory()) {
+      return { path: raw, resolved: abs, exists: false, skills: 0, error: "not a directory" };
+    }
+    const skills = fs
+      .readdirSync(abs, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && fs.existsSync(path.join(abs, entry.name, "SKILL.md")))
+      .length;
+    return { path: raw, resolved: fs.realpathSync(abs), exists: true, skills };
+  } catch (error) {
+    const code = error?.code;
+    return {
+      path: raw,
+      resolved: abs,
+      exists: false,
+      skills: 0,
+      error: code === "ENOENT" ? "not found" : String(error?.message || error),
+    };
+  }
 }
 
 /**
- * Official `{ paths, resolved, suggestions }`. Skills are per-colony
- * (`<colony>/skills/<name>/SKILL.md`); there are no external skill roots and
- * no config file in which to record one.
+ * Official `{ paths, resolved, suggestions }`. Paths are the saved external
+ * skill roots; colony-local skills (`<colony>/skills/`) are not listed here.
  */
 export function buildExternalSkills() {
-  return { paths: [], resolved: [], suggestions: [] };
+  const paths = readSkillPaths();
+  return { paths, resolved: paths.map(resolveSkillPath), suggestions: [] };
 }
 
-/** Official `{ limits }`. pi_hive has no social-action rate limiter. */
+/** Official `{ limits }`: saved per-platform social pacing, empty by default. */
 export function buildRateLimits() {
-  return { limits: [] };
+  return { limits: readRateLimits() };
 }
 
 /**
@@ -250,6 +308,11 @@ function invalidRequest(route, message) {
   return { status: 400, body: { error: message, type: "invalid_request", route } };
 }
 
+/** 400 for a mutation whose payload is wrong; the route is the handler's own path. */
+function invalid(message) {
+  return { status: 400, body: { error: message, type: "invalid_request" } };
+}
+
 function bodyError(route, parsed) {
   if (parsed.tooLarge) {
     return { status: 413, body: { error: "request body too large", type: "invalid_request", route } };
@@ -286,8 +349,11 @@ async function getRateLimits() {
 }
 
 /** Official GET avatar: pi_hive has no avatar file, so the documented 404. */
+/** Official GET avatar: the saved profile picture, or 404 when never uploaded. */
 async function getProfileAvatar() {
-  return notFound("No avatar found");
+  const avatar = readAvatar();
+  if (!avatar) return notFound("No avatar found");
+  return { status: 200, body: avatar.bytes, content_type: avatar.content_type };
 }
 
 async function getEndpointModels(args = {}) {
@@ -363,77 +429,238 @@ async function postValidateKey(args = {}) {
 // Mutation handlers (all refusals are capability-explicit)
 // ---------------------------------------------------------------------------
 
-function putLlmSections(args = {}) {
-  return unsupported(
-    routeOf(args, "/api/config/llm-sections"),
-    "config.llm-sections",
-    "pi_hive reads its model from PI_HIVE_MODEL, PI_HIVE_BASE_URL and PI_HIVE_API_KEY; there is no writable configuration file, so a provider slot cannot be saved or hot-swapped",
-  );
+/** Read the whole request as bytes, for a multipart avatar upload. */
+async function readRawBody(req) {
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  return Buffer.concat(chunks);
 }
 
-function putProviderLibrary(args = {}) {
-  return unsupported(
-    routeOf(args, "/api/config/provider-library"),
-    "config.provider-library",
-    "pi_hive has no provider library: its single OpenAI-compatible endpoint comes from environment variables, not saved vendor configs",
-  );
+/**
+ * A saved model takes effect in every runtime built afterwards: the server drops
+ * its cached env-derived runtime and every colony runtime, so the next turn of
+ * each live session constructs its agent against the saved model. Returns how
+ * many colony runtimes were dropped (0 when no server is in the ctx, or when the
+ * runtime was injected by tests/CLI and is therefore not ours to swap).
+ */
+function swapLiveSessions(ctx) {
+  // The dispatcher passes the server instance itself as ctx.
+  const server = ctx?.server ?? ctx;
+  if (!server || typeof server.swapModelRuntime !== "function") return 0;
+  return server.swapModelRuntime();
 }
 
-function applyProviderLibrary(args = {}) {
-  return unsupported(
-    routeOf(args, "/api/config/provider-library/apply"),
-    "config.provider-library",
-    "pi_hive has no provider library entry to apply: the model endpoint comes from PI_HIVE_BASE_URL",
-  );
+function countColonies() {
+  try {
+    return fs.readdirSync(coloniesDir(), { withFileTypes: true }).filter((e) => e.isDirectory()).length;
+  } catch {
+    return 0;
+  }
 }
 
-function putExternalSkills(args = {}) {
-  return unsupported(
-    routeOf(args, "/api/config/external-skills"),
-    "config.external-skills",
-    "pi_hive has no external skill roots: skills live in each colony's skills/ directory and there is no configuration file to record extra paths",
-  );
-}
+/** PUT /config/llm-sections — write one provider slot (null clears it). */
+const putLlmSections = async ({ req, ctx }) => {
+  const parsed = await readJson(req);
+  if (!parsed.ok) return invalid("Invalid JSON body");
+  const { role, section } = parsed.value ?? {};
+  if (!ROLE_SLOTS.includes(role)) return invalid(`unknown role '${role}'`);
+  const value = section === undefined ? null : section;
+  const error = sectionError(value);
+  if (error) return invalid(error);
+  const sections = writeSection(role, value);
+  if (role === "llm") writeLlmOverride(value);
+  return {
+    status: 200,
+    body: {
+      role,
+      section: sections[role] ?? null,
+      sessions_swapped: role === "llm" ? swapLiveSessions(ctx) : 0,
+    },
+  };
+};
 
-function putFeatures(args = {}) {
-  return unsupported(
-    routeOf(args, "/api/config/features"),
-    "config.features",
-    "pi_hive has no feature-flag store: the Hive-only features (adaptive tool budget, email senders, stall check) do not exist here",
-  );
-}
+/** PUT /config/provider-library — save (or delete with null) one vendor entry. */
+const putProviderLibrary = async ({ req }) => {
+  const parsed = await readJson(req);
+  if (!parsed.ok) return invalid("Invalid JSON body");
+  const { name, section } = parsed.value ?? {};
+  if (typeof name !== "string" || !name.trim() || name.trim().length > 64) {
+    return invalid("name must be a non-empty string of at most 64 characters");
+  }
+  const value = section === undefined ? null : section;
+  const error = sectionError(value);
+  if (error) return invalid(error);
+  const library = setLibraryEntry(name.trim(), value);
+  return { status: 200, body: { name: name.trim(), section: library[name.trim()] ?? null } };
+};
 
-function putLlmConfig(args = {}) {
-  return unsupported(
-    routeOf(args, "/api/config/llm"),
-    "config.llm",
-    "pi_hive serves a single model configured by PI_HIVE_MODEL, PI_HIVE_BASE_URL and PI_HIVE_API_KEY; runtime model switching and session hot-swap are not supported",
-  );
-}
+/** POST /config/provider-library/apply — copy a saved entry into a slot. */
+const applyProviderLibrary = async ({ req, ctx }) => {
+  const parsed = await readJson(req);
+  if (!parsed.ok) return invalid("Invalid JSON body");
+  const body = parsed.value ?? {};
+  const { name } = body;
+  const role = body.role === undefined ? "llm" : body.role;
+  if (!ROLE_SLOTS.includes(role)) return invalid(`unknown role '${role}'`);
+  const entry = typeof name === "string" ? readLibrary()[name] : undefined;
+  if (!entry) return notFound(`There's no provider '${name}'`);
+  const sections = writeSection(role, entry);
+  if (role === "llm") writeLlmOverride(entry);
+  return {
+    status: 200,
+    body: {
+      role,
+      section: sections[role] ?? null,
+      sessions_swapped: role === "llm" ? swapLiveSessions(ctx) : 0,
+    },
+  };
+};
 
-function putProfile(args = {}) {
-  return unsupported(
-    routeOf(args, "/api/config/profile"),
-    "config.profile",
-    "pi_hive has no user profile store, so display name, about, theme and density cannot be saved",
-  );
-}
+/** PUT /config/external-skills — replace the list of external skill roots. */
+const putExternalSkills = async ({ req }) => {
+  const parsed = await readJson(req);
+  if (!parsed.ok) return invalid("Invalid JSON body");
+  const paths = parsed.value?.paths;
+  if (!Array.isArray(paths) || paths.some((p) => typeof p !== "string" || !p.trim() || p.includes("\0"))) {
+    return invalid("paths must be an array of directory paths");
+  }
+  const unique = [...new Set(paths.map((p) => p.trim()))];
+  writeSkillPaths(unique);
+  return { status: 200, body: { paths: unique, resolved: unique.map(resolveSkillPath) } };
+};
 
-function putRateLimits(args = {}) {
-  return unsupported(
-    routeOf(args, "/api/config/rate-limits"),
-    "config.rate-limits",
-    "pi_hive has no social rate-limit store: it runs no outbound social actions and keeps no per-platform limits",
-  );
-}
+/** PUT /config/features — persist the Developer-options switches. */
+const putFeatures = async ({ req }) => {
+  const parsed = await readJson(req);
+  if (!parsed.ok) return invalid("Invalid JSON body");
+  const features = parsed.value?.features;
+  if (typeof features !== "object" || features === null || Array.isArray(features)) {
+    return invalid("features must be an object");
+  }
+  const unknown = Object.keys(features).filter((key) => !FEATURE_KEYS.includes(key));
+  if (unknown.length) return invalid(`unknown feature flags: ${unknown.join(", ")}`);
+  for (const key of Object.keys(features)) {
+    if (typeof features[key] !== "boolean") return invalid(`${key} must be a boolean`);
+  }
+  writeFeatures(features);
+  return { status: 200, body: { features: buildFeatures().features, colonies_applied: countColonies() } };
+};
 
-function postProfileAvatar(args = {}) {
-  return unsupported(
-    routeOf(args, "/api/config/profile/avatar"),
-    "config.profile.avatar",
-    "pi_hive has no avatar store or profile asset directory, so a profile picture cannot be uploaded",
-  );
-}
+/** PUT /config/llm — switch the model, on the catalogue or on the custom endpoint. */
+const putLlmConfig = async ({ req, ctx }) => {
+  const parsed = await readJson(req);
+  if (!parsed.ok) return invalid("Invalid JSON body");
+  const body = parsed.value ?? {};
+  if (body.subscription !== undefined) {
+    return invalid(`pi_hive has no subscription presets; '${body.subscription}' is unknown`);
+  }
+  if (typeof body.model !== "string" || !body.model.trim()) return invalid("model is required");
+  const current = buildLLMConfig();
+  if (body.provider !== undefined && body.provider !== current.provider) {
+    return invalid(`pi_hive serves one endpoint; provider '${body.provider}' is not configured`);
+  }
+  const override = { ...readLlmOverride(), model: body.model.trim() };
+  delete override.api_key;
+  writeLlmOverride(override);
+  const next = buildLLMConfig();
+  return {
+    status: 200,
+    body: {
+      provider: next.provider,
+      model: next.model,
+      has_api_key: next.has_api_key,
+      max_tokens: next.max_tokens,
+      max_context_tokens: next.max_context_tokens,
+      sessions_swapped: swapLiveSessions(ctx),
+      active_subscription: null,
+    },
+  };
+};
+
+/** PUT /config/profile — save display name, about, theme, density, sort order. */
+const putProfile = async ({ req }) => {
+  const parsed = await readJson(req);
+  if (!parsed.ok) return invalid("Invalid JSON body");
+  const body = parsed.value ?? {};
+  const patch = {};
+  for (const key of ["displayName", "about", "theme", "density"]) {
+    if (body[key] !== undefined) {
+      if (typeof body[key] !== "string" || body[key].length > 2000) {
+        return invalid(`${key} must be a string of at most 2000 characters`);
+      }
+      patch[key] = body[key];
+    }
+  }
+  if (body.prompt_library_sort !== undefined) {
+    const sort = body.prompt_library_sort;
+    const badSort =
+      sort !== null &&
+      (typeof sort !== "object" ||
+        Array.isArray(sort) ||
+        ["my", "community"].some((k) => sort[k] !== undefined && typeof sort[k] !== "string"));
+    if (badSort) return invalid("prompt_library_sort must be null or an object of my/community");
+    patch.prompt_library_sort = sort;
+  }
+  if (!Object.keys(patch).length) return invalid("no profile fields supplied");
+  const profile = writeProfile(patch);
+  return {
+    status: 200,
+    body: {
+      displayName: profile.displayName ?? "",
+      about: profile.about ?? "",
+      theme: profile.theme ?? "",
+      prompt_library_sort: profile.prompt_library_sort ?? null,
+    },
+  };
+};
+
+/** PUT /config/rate-limits — replace the pacing table from `platform:action` map. */
+const putRateLimits = async ({ req }) => {
+  const parsed = await readJson(req);
+  if (!parsed.ok) return invalid("Invalid JSON body");
+  const limits = parsed.value?.limits;
+  if (typeof limits !== "object" || limits === null || Array.isArray(limits)) {
+    return invalid("limits must be an object mapping 'platform:action_type' to seconds");
+  }
+  const entries = [];
+  const warnings = [];
+  for (const [key, value] of Object.entries(limits)) {
+    const parts = key.split(/[:./]/);
+    if (parts.length !== 2 || !parts[0] || !parts[1]) {
+      warnings.push(`ignored '${key}': expected 'platform:action_type'`);
+      continue;
+    }
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+      warnings.push(`ignored '${key}': delay must be a non-negative number`);
+      continue;
+    }
+    entries.push({ platform: parts[0], action_type: parts[1], min_delay_s: value });
+  }
+  return { status: 200, body: { limits: writeRateLimits(entries), warnings } };
+};
+
+const AVATAR_TYPES = /^(image\/(png|jpeg|jpg|webp)|application\/octet-stream)$/;
+
+/** POST /config/profile/avatar — store the uploaded profile picture. */
+const postProfileAvatar = async ({ req }) => {
+  let parts;
+  try {
+    parts = parseMultipart(await readRawBody(req), req.headers["content-type"]);
+  } catch (error) {
+    return invalid(error?.message || "Expected multipart/form-data with an avatar field");
+  }
+  const field = parts.find((part) => part.name === "avatar" && part.data?.length);
+  if (!field) return invalid("multipart field 'avatar' is required");
+  const contentType = field.contentType || "application/octet-stream";
+  if (!AVATAR_TYPES.test(contentType)) {
+    return invalid(`avatar must be a PNG, JPEG or WebP image, not ${contentType}`);
+  }
+  if (field.data.length > MAX_AVATAR_BYTES) {
+    return invalid(`avatar exceeds ${MAX_AVATAR_BYTES} bytes`);
+  }
+  saveAvatar({ bytes: field.data, contentType });
+  return { status: 200, body: { avatar_url: "/api/config/profile/avatar" } };
+};
 
 const SLOT_REASONS = Object.freeze({
   llm: {
@@ -564,19 +791,19 @@ function postCredentialForm(args = {}) {
 const ROUTE_TABLE = [
   ["GET", "/api/startup-status", getStartupStatus, "official StartupStatus; ready, with no bootstrap daemon"],
   ["GET", "/api/config/llm-sections", getLlmSections, "official provider slots; the real env-configured llm slot, others null"],
-  ["PUT", "/api/config/llm-sections", putLlmSections, "400: pi_hive's model config is env-only and has no writable slots"],
-  ["GET", "/api/config/provider-library", getProviderLibrary, "official provider library; empty (no vendor config store)"],
-  ["PUT", "/api/config/provider-library", putProviderLibrary, "400: pi_hive has no provider library store"],
-  ["POST", "/api/config/provider-library/apply", applyProviderLibrary, "400: pi_hive has no provider library entry to apply"],
-  ["GET", "/api/config/external-skills", getExternalSkills, "official external skill roots; empty (skills are colony-local)"],
-  ["PUT", "/api/config/external-skills", putExternalSkills, "400: pi_hive has no external-skill configuration file"],
-  ["PUT", "/api/config/features", putFeatures, "400: pi_hive implements no Hive-only feature flags"],
-  ["PUT", "/api/config/llm", putLlmConfig, "400: the single model is env-configured and cannot be hot-swapped"],
-  ["PUT", "/api/config/profile", putProfile, "400: pi_hive has no user profile store"],
-  ["GET", "/api/config/rate-limits", getRateLimits, "official rate limits; empty (no social rate limiter)"],
-  ["PUT", "/api/config/rate-limits", putRateLimits, "400: pi_hive has no social rate-limit store"],
-  ["POST", "/api/config/profile/avatar", postProfileAvatar, "400: pi_hive has no avatar store"],
-  ["GET", "/api/config/profile/avatar", getProfileAvatar, "official 404: pi_hive has no avatar file"],
+  ["PUT", "/api/config/llm-sections", putLlmSections, "writes one slot durably; the llm slot drives the runtime for runtimes built afterwards"],
+  ["GET", "/api/config/provider-library", getProviderLibrary, "the saved vendor configs, empty until one is PUT"],
+  ["PUT", "/api/config/provider-library", putProviderLibrary, "saves (or deletes with null) one named vendor config; api_key is refused"],
+  ["POST", "/api/config/provider-library/apply", applyProviderLibrary, "copies a saved entry into a provider slot; 404 for an unknown name"],
+  ["GET", "/api/config/external-skills", getExternalSkills, "the saved skill roots with each one's on-disk status"],
+  ["PUT", "/api/config/external-skills", putExternalSkills, "replaces the saved skill roots and reports how each resolves"],
+  ["PUT", "/api/config/features", putFeatures, "persists the three feature switches; unknown flags are 400 (no behaviour is wired to them here)"],
+  ["PUT", "/api/config/llm", putLlmConfig, "switches the model; the saved value outranks the environment for later runtimes"],
+  ["PUT", "/api/config/profile", putProfile, "saves display name, about, theme, density and prompt sort"],
+  ["GET", "/api/config/rate-limits", getRateLimits, "the saved pacing table, empty until one is PUT"],
+  ["PUT", "/api/config/rate-limits", putRateLimits, "replaces the pacing table from a platform:action map, warning on unusable keys"],
+  ["POST", "/api/config/profile/avatar", postProfileAvatar, "stores the uploaded picture under the config dir; image types only, 5 MiB cap"],
+  ["GET", "/api/config/profile/avatar", getProfileAvatar, "serves the stored avatar bytes; 404 until one is uploaded"],
   ["PUT", "/api/models/slots/:slot", putSlot, "400: pi_hive runs one env-configured model and has no other slots"],
   ["DELETE", "/api/models/slots/:slot", deleteSlot, "400: the single model cannot be cleared and other slots do not exist"],
   ["GET", "/api/models/endpoints/:endpoint/models", getEndpointModels, "the configured endpoint's single real model; 404 for unknown names"],

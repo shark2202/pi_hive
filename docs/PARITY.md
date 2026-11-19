@@ -112,6 +112,7 @@
 | MCP | ⬜ | No MCP server loading |
 | Credentials store | 🟡 | Env only; no encrypted store/UI |
 | Model catalog/UI | 🟡 | Env-configured single OpenAI-compatible model |
+| Config writes | ✅ | Provider slots, named provider library (+apply), external skill roots, feature switches, the model override, profile, pacing table and profile avatar persist under `hiveHome()/config/`; a saved model outranks the environment for runtimes built afterwards, `api_key` in a payload is refused |
 
 ## Interface
 

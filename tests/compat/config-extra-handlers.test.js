@@ -63,12 +63,15 @@ after(() => {
 
 function makeRegistry(ctx) {
   const registry = new RouteRegistry();
+  // Each registry gets its own home so one test's writes cannot leak into another.
+  process.env.PI_HIVE_HOME = temporaryHome("cfg-reg");
   registerConfigExtraRoutes(registry, ctx);
   return registry;
 }
 
 function makeCombinedRegistry() {
   const registry = new RouteRegistry();
+  process.env.PI_HIVE_HOME = temporaryHome("cfg-combined");
   registerConfigRoutes(registry);
   registerConfigExtraRoutes(registry);
   return registry;
@@ -229,9 +232,12 @@ test("adds to config.js without shadowing its existing routes", async () => {
   const llm = await call(registry, "GET", "/api/config/llm");
   assert.equal(llm.status, 200);
   assert.equal(llm.body.provider, "pihive");
-  const put = await call(registry, "PUT", "/api/config/llm", { body: { provider: "openai", model: "x" } });
-  assert.equal(put.status, 400);
-  assert.equal(put.body.type, "unsupported_capability");
+  const switched = await call(registry, "PUT", "/api/config/llm", { body: { model: "combined-model" } });
+  assert.equal(switched.status, 200);
+  assert.equal(switched.body.model, "combined-model");
+  const foreign = await call(registry, "PUT", "/api/config/llm", { body: { provider: "openai", model: "x" } });
+  assert.equal(foreign.status, 400);
+  assert.match(foreign.body.error, /one endpoint/);
 });
 
 // --- Config reads ------------------------------------------------------------
@@ -479,15 +485,6 @@ test("request bodies are read from a Node request stream, like the server passes
 // --- Mutations: explicit 4xx, never 501 or fake success ----------------------
 
 const UNSUPPORTED_MUTATIONS = [
-  ["PUT", "/api/config/llm-sections"],
-  ["PUT", "/api/config/provider-library"],
-  ["POST", "/api/config/provider-library/apply"],
-  ["PUT", "/api/config/external-skills"],
-  ["PUT", "/api/config/features"],
-  ["PUT", "/api/config/llm"],
-  ["PUT", "/api/config/profile"],
-  ["PUT", "/api/config/rate-limits"],
-  ["POST", "/api/config/profile/avatar"],
   ["PUT", "/api/models/slots/llm"],
   ["DELETE", "/api/models/slots/llm"],
   ["PUT", "/api/models/slots/worker_llm"],
@@ -525,6 +522,175 @@ test("every unsupported mutation answers 400 with an explicit reason", async () 
   }
 });
 
+
+// --- Config writes: durable round-trips --------------------------------------
+
+test("PUT /api/config/llm-sections stores a slot that GET reads back", async () => {
+  const registry = makeCombinedRegistry();
+  const written = await call(registry, "PUT", "/api/config/llm-sections", {
+    body: {
+      role: "judge",
+      section: { provider: "openai", model: "judge-model", api_base: "https://judge.test/v1", api_key_env_var: "JUDGE_KEY" },
+    },
+  });
+  assert.equal(written.status, 200);
+  assert.equal(written.body.role, "judge");
+  assert.equal(written.body.section.model, "judge-model");
+  assert.equal(written.body.sessions_swapped, 0); // no server in this context
+  const read = await call(registry, "GET", "/api/config/llm-sections");
+  assert.equal(read.body.judge.model, "judge-model");
+  assert.equal(read.body.llm.model, (await call(registry, "GET", "/api/config/llm")).body.model, "a judge write does not move the llm slot");
+
+  const cleared = await call(registry, "PUT", "/api/config/llm-sections", { body: { role: "judge", section: null } });
+  assert.equal(cleared.body.section, null);
+  assert.equal((await call(registry, "GET", "/api/config/llm-sections")).body.judge, null);
+});
+
+test("a config write refuses a secret and never echoes it back", async () => {
+  const registry = makeRegistry();
+  const withKey = await call(registry, "PUT", "/api/config/llm-sections", {
+    body: { role: "judge", section: { provider: "openai", model: "m", api_key: "submitted-secret-value" } },
+  });
+  assert.equal(withKey.status, 400);
+  assert.match(withKey.body.error, /api_key/);
+  assert.equal(JSON.stringify(withKey.body).includes("submitted-secret-value"), false);
+  assert.equal(JSON.stringify(await call(registry, "GET", "/api/config/llm-sections")).includes("submitted-secret-value"), false);
+
+  const unknownRole = await call(registry, "PUT", "/api/config/llm-sections", { body: { role: "nope", section: null } });
+  assert.equal(unknownRole.status, 400);
+});
+
+test("PUT /api/config/llm switches the model and the saved value outranks the environment", async () => {
+  const registry = makeCombinedRegistry();
+  const res = await call(registry, "PUT", "/api/config/llm", { body: { model: "swapped-model" } });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.model, "swapped-model");
+  assert.equal(res.body.provider, "pihive");
+  assert.equal(res.body.has_api_key, true);
+  assert.equal(res.body.sessions_swapped, 0);
+  assert.equal(res.body.active_subscription, null);
+  assert.equal((await call(registry, "GET", "/api/config/llm")).body.model, "swapped-model");
+
+  const foreignProvider = await call(registry, "PUT", "/api/config/llm", { body: { provider: "openai", model: "x" } });
+  assert.equal(foreignProvider.status, 400);
+  assert.match(foreignProvider.body.error, /one endpoint/);
+  const subscription = await call(registry, "PUT", "/api/config/llm", { body: { subscription: "claude", model: "x" } });
+  assert.equal(subscription.status, 400);
+  assert.equal((await call(registry, "GET", "/api/config/llm")).body.model, "swapped-model", "refusals change nothing");
+});
+
+test("the provider library saves entries and applies one into a slot", async () => {
+  const registry = makeCombinedRegistry();
+  const saved = await call(registry, "PUT", "/api/config/provider-library", {
+    body: { name: "local-llama", section: { provider: "openai", model: "llama-3", api_base: "http://127.0.0.1:8080/v1" } },
+  });
+  assert.equal(saved.status, 200);
+  assert.equal(saved.body.name, "local-llama");
+  assert.deepEqual(Object.keys((await call(registry, "GET", "/api/config/provider-library")).body.library), ["local-llama"]);
+
+  const applied = await call(registry, "POST", "/api/config/provider-library/apply", { body: { name: "local-llama" } });
+  assert.equal(applied.status, 200);
+  assert.equal(applied.body.role, "llm");
+  assert.equal(applied.body.section.model, "llama-3");
+  assert.equal((await call(registry, "GET", "/api/config/llm")).body.model, "llama-3", "applying re-points the runtime slot");
+
+  assert.equal((await call(registry, "POST", "/api/config/provider-library/apply", { body: { name: "ghost" } })).status, 404);
+  assert.equal((await call(registry, "PUT", "/api/config/provider-library", { body: { name: "", section: null } })).status, 400);
+  const deleted = await call(registry, "PUT", "/api/config/provider-library", { body: { name: "local-llama", section: null } });
+  assert.equal(deleted.body.section, null);
+  assert.deepEqual((await call(registry, "GET", "/api/config/provider-library")).body, { library: {} });
+});
+
+test("PUT /api/config/external-skills records roots and reports how each resolves", async () => {
+  const registry = makeRegistry();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "pihive-skills-"));
+  fs.mkdirSync(path.join(root, "demo-skill"), { recursive: true });
+  fs.writeFileSync(path.join(root, "demo-skill", "SKILL.md"), "# demo\n");
+  const res = await call(registry, "PUT", "/api/config/external-skills", { body: { paths: [root, "/nope/missing"] } });
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body.paths, [root, "/nope/missing"]);
+  assert.equal(res.body.resolved[0].exists, true);
+  assert.equal(res.body.resolved[0].skills, 1);
+  assert.equal(res.body.resolved[1].exists, false);
+  assert.deepEqual((await call(registry, "GET", "/api/config/external-skills")).body.paths, [root, "/nope/missing"]);
+  assert.equal((await call(registry, "PUT", "/api/config/external-skills", { body: { paths: "x" } })).status, 400);
+});
+
+test("PUT /api/config/features persists the switches", async () => {
+  const registry = makeCombinedRegistry();
+  const res = await call(registry, "PUT", "/api/config/features", { body: { features: { stall_check: true } } });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.features.stall_check, true);
+  assert.equal(res.body.features.adaptive_tool_budget, false, "unwritten flags keep their default");
+  assert.equal(typeof res.body.colonies_applied, "number");
+  assert.equal((await call(registry, "GET", "/api/config/features")).body.features.stall_check, true);
+  assert.equal((await call(registry, "PUT", "/api/config/features", { body: { features: { nope: true } } })).status, 400);
+  assert.equal((await call(registry, "PUT", "/api/config/features", { body: { features: { stall_check: "yes" } } })).status, 400);
+});
+
+test("PUT /api/config/profile saves the profile; has_avatar follows the avatar store", async () => {
+  const registry = makeCombinedRegistry();
+  assert.equal((await call(registry, "GET", "/api/config/profile")).body.has_avatar, false);
+  const res = await call(registry, "PUT", "/api/config/profile", {
+    body: { displayName: "Cap", about: "runs the colony", theme: "dusk", prompt_library_sort: { my: "updated_at" } },
+  });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.displayName, "Cap");
+  const after = await call(registry, "GET", "/api/config/profile");
+  assert.equal(after.body.about, "runs the colony");
+  assert.equal(after.body.theme, "dusk");
+  assert.deepEqual(after.body.prompt_library_sort, { my: "updated_at" });
+  assert.equal((await call(registry, "PUT", "/api/config/profile", { body: {} })).status, 400);
+  assert.equal((await call(registry, "PUT", "/api/config/profile", { body: { prompt_library_sort: 5 } })).status, 400);
+});
+
+test("the profile avatar round-trips as bytes", async () => {
+  const registry = makeCombinedRegistry();
+  assert.equal((await call(registry, "GET", "/api/config/profile/avatar")).status, 404);
+
+  const boundary = "pihive-config-avatar";
+  const bytes = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3, 4]);
+  const raw = Buffer.concat([
+    Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="avatar"; filename="a.png"\r\nContent-Type: image/png\r\n\r\n`,
+    ),
+    bytes,
+    Buffer.from(`\r\n--${boundary}--\r\n`),
+  ]);
+  const uploaded = await call(registry, "POST", "/api/config/profile/avatar", {
+    req: Object.assign(Readable.from([raw]), { method: "POST", headers: { "content-type": `multipart/form-data; boundary=${boundary}` } }),
+  });
+  assert.equal(uploaded.status, 200);
+  assert.equal(uploaded.body.avatar_url, "/api/config/profile/avatar");
+
+  const served = await call(registry, "GET", "/api/config/profile/avatar");
+  assert.equal(served.status, 200);
+  assert.equal(served.content_type, "image/png");
+  assert.equal(Buffer.compare(served.body, bytes), 0);
+  assert.equal((await call(registry, "GET", "/api/config/profile")).body.has_avatar, true);
+
+  const notAnImage = await call(registry, "POST", "/api/config/profile/avatar", {
+    req: Object.assign(Readable.from([Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="avatar"; filename="a.txt"\r\nContent-Type: text/plain\r\n\r\nhi\r\n--${boundary}--\r\n`)]), {
+      method: "POST",
+      headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+    }),
+  });
+  assert.equal(notAnImage.status, 400);
+});
+
+test("PUT /api/config/rate-limits replaces the table and warns on unusable keys", async () => {
+  const registry = makeRegistry();
+  const res = await call(registry, "PUT", "/api/config/rate-limits", {
+    body: { limits: { "twitter:like": 30, "reddit:comment": 120, broken: 5, "x:y": -1 } },
+  });
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body.limits, [
+    { platform: "twitter", action_type: "like", min_delay_s: 30 },
+    { platform: "reddit", action_type: "comment", min_delay_s: 120 },
+  ]);
+  assert.equal(res.body.warnings.length, 2);
+  assert.deepEqual((await call(registry, "GET", "/api/config/rate-limits")).body.limits, res.body.limits);
+});
 test("slot and endpoint refusals distinguish unknown names from known gaps", async () => {
   const registry = makeRegistry();
 

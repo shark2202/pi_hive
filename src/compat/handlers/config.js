@@ -20,6 +20,7 @@
  *
  * Nothing here calls a model or opens a network port.
  */
+import { hasAvatar, readFeatures, readProfile } from "../../domain/config-store.js";
 
 import fs from "node:fs";
 import path from "node:path";
@@ -165,12 +166,13 @@ export function buildModelsOverview() {
  * install; `has_avatar` is false because pi_hive has no avatar store.
  */
 export function buildProfile() {
+  const stored = readProfile();
   return {
-    displayName: "",
-    about: "",
-    theme: "",
-    has_avatar: false,
-    prompt_library_sort: null,
+    displayName: stored.displayName ?? "",
+    about: stored.about ?? "",
+    theme: stored.theme ?? "",
+    has_avatar: hasAvatar(),
+    prompt_library_sort: stored.prompt_library_sort ?? null,
   };
 }
 
@@ -179,11 +181,12 @@ export function buildProfile() {
  * (no adaptive tool budget, email sender pool, or judge-driven stall check).
  */
 export function buildFeatures() {
+  const stored = readFeatures();
   return {
     features: {
-      adaptive_tool_budget: false,
-      email_senders: false,
-      stall_check: false,
+      adaptive_tool_budget: stored.adaptive_tool_budget ?? false,
+      email_senders: stored.email_senders ?? false,
+      stall_check: stored.stall_check ?? false,
     },
   };
 }

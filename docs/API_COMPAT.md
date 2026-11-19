@@ -191,28 +191,28 @@ _pi_hive:_ 2 implemented, 4 partial. Overview and endpoint model listing describ
 
 ## Configuration (19)
 
-_pi_hive:_ 10 implemented, 9 partial. Reads return real env-derived config or documented empty envelopes; writes that need a persistent config/profile/library/feature/rate-limit store answer explicit 400.
+_pi_hive:_ 19 implemented. Reads return real config (env plus what was saved) or documented empty envelopes; the nine writes persist under `hiveHome()/config/` (`src/domain/config-store.js`): provider slots, the named provider library, external skill roots, feature switches, the model override (which outranks `PI_HIVE_MODEL`/`PI_HIVE_BASE_URL` for runtimes built afterwards), the user profile, the pacing table and the profile avatar. A section carrying `api_key` is refused — keys stay in the environment — and subscription presets are refused because pi_hive serves one endpoint.
 
 | Method | Path | Client (source) | Request | Response | SSE events | pi_hive |
 |---|---|---|---|---|---|---|
 | GET | `/config/llm` | config (`config.ts:115`) | — | LLMConfig | — | implemented |
 | GET | `/startup-status` | config (`config.ts:117`) | — | StartupStatus | — | implemented |
 | GET | `/config/llm-sections` | config (`config.ts:121`) | — | Record<LlmRole, LlmSection\|null> | — | implemented |
-| PUT | `/config/llm-sections` | config (`config.ts:126`) | inline {role, section} | {role, section, sessions_swapped?} | — | partial |
+| PUT | `/config/llm-sections` | config (`config.ts:126`) | inline {role, section} | {role, section, sessions_swapped?} | — | implemented |
 | GET | `/config/provider-library` | config (`config.ts:133`) | — | {library: Record<string, LlmSection>} | — | implemented |
-| PUT | `/config/provider-library` | config (`config.ts:138`) | inline {name, section} | {name, section} | — | partial |
-| POST | `/config/provider-library/apply` | config (`config.ts:146`) | inline {name, role} | {role, section, sessions_swapped?} | — | partial |
+| PUT | `/config/provider-library` | config (`config.ts:138`) | inline {name, section} | {name, section} | — | implemented |
+| POST | `/config/provider-library/apply` | config (`config.ts:146`) | inline {name, role} | {role, section, sessions_swapped?} | — | implemented |
 | GET | `/config/external-skills` | config (`config.ts:155`) | — | {paths, resolved, suggestions?} | — | implemented |
-| PUT | `/config/external-skills` | config (`config.ts:160`) | inline {paths: string[]} | {paths, resolved} | — | partial |
+| PUT | `/config/external-skills` | config (`config.ts:160`) | inline {paths: string[]} | {paths, resolved} | — | implemented |
 | GET | `/config/features` | config (`config.ts:162`) | — | {features: FeaturesConfig} | — | implemented |
-| PUT | `/config/features` | config (`config.ts:169`) | inline {features: Partial<FeaturesConfig>} | {features, colonies_applied} | — | partial |
-| PUT | `/config/llm` | config (`config.ts:175`) | inline {provider, model} \| {custom, model} \| {subscription} | LLMConfigUpdateResponse | — | partial |
+| PUT | `/config/features` | config (`config.ts:169`) | inline {features: Partial<FeaturesConfig>} | {features, colonies_applied} | — | implemented |
+| PUT | `/config/llm` | config (`config.ts:175`) | inline {provider, model} \| {custom, model} \| {subscription} | LLMConfigUpdateResponse | — | implemented |
 | GET | `/config/models` | config (`config.ts:185`) | — | ModelsCatalogue | — | implemented |
 | GET | `/config/profile` | config (`config.ts:188`) | — | {displayName, about, theme, has_avatar?, prompt_library_sort?} | — | implemented |
-| PUT | `/config/profile` | config (`config.ts:204`) | inline {displayName?, about?, theme?, density?, prompt_library_sort?} | {displayName, about, theme, prompt_library_sort?} | — | partial |
+| PUT | `/config/profile` | config (`config.ts:204`) | inline {displayName?, about?, theme?, density?, prompt_library_sort?} | {displayName, about, theme, prompt_library_sort?} | — | implemented |
 | GET | `/config/rate-limits` | config (`config.ts:221`) | — | {limits: RateLimitEntry[]} | — | implemented |
-| PUT | `/config/rate-limits` | config (`config.ts:224`) | inline {limits: Record<string, number>} | {limits, warnings?} | — | partial |
-| POST | `/config/profile/avatar` | config (`config.ts:229`) | multipart form-data: avatar | {avatar_url} | — | partial |
+| PUT | `/config/rate-limits` | config (`config.ts:224`) | inline {limits: Record<string, number>} | {limits, warnings?} | — | implemented |
+| POST | `/config/profile/avatar` | config (`config.ts:229`) | multipart form-data: avatar | {avatar_url} | — | implemented |
 | GET | `/config/profile/avatar` | config (`AppHeader.tsx:36`) | — | image bytes | — | implemented |
 
 ## Sentinel / notifications (7)
