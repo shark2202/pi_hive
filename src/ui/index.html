@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>pi-hive</title>
+  <link rel="stylesheet" href="/ui/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="mark" aria-hidden="true">π</span>
+      <div>
+        <strong>pi-hive</strong>
+        <span class="muted">Queen / Worker / Colony</span>
+      </div>
+    </div>
+    <div class="top-actions">
+      <span id="health" class="pill" role="status">connecting…</span>
+      <button id="new-colony" class="primary">New colony</button>
+    </div>
+  </header>
+
+  <div class="shell">
+    <aside class="sidebar" aria-label="Colonies">
+      <div class="side-head">
+        <h2>Colonies</h2>
+        <button id="refresh-colonies" class="ghost small" title="Refresh colonies">↻</button>
+      </div>
+      <ul id="colony-list" class="colony-list"></ul>
+      <p id="colony-empty" class="muted small hidden">No colonies yet. Create one to start.</p>
+    </aside>
+
+    <main class="main" id="main">
+      <section id="welcome" class="empty-state">
+        <h1>One queen per colony.</h1>
+        <p class="muted">Pick a colony, or create one. A queen owns the goal, spawns workers, and keeps state in the tracker.</p>
+        <button id="welcome-new" class="primary">Create the first colony</button>
+      </section>
+
+      <section id="colony-view" class="hidden">
+        <div class="colony-head">
+          <div>
+            <p class="eyebrow" id="colony-queen">queen</p>
+            <h1 id="colony-name">colony</h1>
+            <p id="colony-goal" class="muted"></p>
+          </div>
+          <div class="head-actions">
+            <span id="sentinel-pill" class="pill">Sentinel off</span>
+            <button id="refresh-view" class="ghost">Refresh</button>
+          </div>
+        </div>
+
+        <nav class="tabs" role="tablist" aria-label="Colony views">
+          <button role="tab" data-tab="overview" aria-selected="true">Overview</button>
+          <button role="tab" data-tab="chat">Chat</button>
+          <button role="tab" data-tab="workers">Workers</button>
+          <button role="tab" data-tab="tracker">Tracker</button>
+          <button role="tab" data-tab="playbooks">Playbooks</button>
+          <button role="tab" data-tab="triggers">Triggers</button>
+          <button role="tab" data-tab="inbox">Inbox</button>
+          <button role="tab" data-tab="soul">Soul</button>
+        </nav>
+
+        <section class="panel" data-panel="overview">
+          <div class="cards">
+            <article class="card"><span class="muted">Active workers</span><strong id="stat-workers">0</strong></article>
+            <article class="card"><span class="muted">Tracker tables</span><strong id="stat-tables">0</strong></article>
+            <article class="card"><span class="muted">Playbook runs</span><strong id="stat-runs">0</strong></article>
+            <article class="card"><span class="muted">Inbox items</span><strong id="stat-inbox">0</strong></article>
+          </div>
+          <div class="grid2">
+            <article class="card">
+              <h3>Plan</h3>
+              <ul id="plan-list" class="list"></ul>
+              <p id="plan-empty" class="muted small">No tasks yet.</p>
+            </article>
+            <article class="card">
+              <h3>Latest worker reports</h3>
+              <ul id="report-list" class="list"></ul>
+              <p id="report-empty" class="muted small">No reports yet.</p>
+            </article>
+          </div>
+          <article class="card loop-card">
+            <h3>How this colony works</h3>
+            <ol class="loop">
+              <li><strong>Queen plans</strong><span>Owns the goal and decides the next move.</span></li>
+              <li><strong>Workers execute</strong><span>One narrow task each, no shared context.</span></li>
+              <li><strong>Tracker verifies</strong><span>Rows are the ground truth, not chat claims.</span></li>
+              <li><strong>Playbook converges</strong><span>Once proven, the method becomes repeatable.</span></li>
+            </ol>
+          </article>
+        </section>
+
+        <section class="panel hidden" data-panel="chat">
+          <div id="chat-log" class="chat-log" aria-live="polite"></div>
+          <form id="chat-form" class="composer">
+            <label class="sr-only" for="chat-text">Message the queen</label>
+            <textarea id="chat-text" rows="3" placeholder="Ask the queen to do something…"></textarea>
+            <div class="composer-row">
+              <span id="chat-status" class="muted small"></span>
+              <button type="submit" class="primary" id="chat-send">Send</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="panel hidden" data-panel="workers">
+          <form id="worker-form" class="inline-form">
+            <label class="sr-only" for="worker-task">Worker task</label>
+            <input id="worker-task" placeholder="One narrow task for a worker" />
+            <button class="primary" type="submit">Spawn worker</button>
+          </form>
+          <div class="table-wrap"><table id="worker-table"><thead><tr><th>ID</th><th>Task</th><th>Status</th></tr></thead><tbody></tbody></table></div>
+        </section>
+
+        <section class="panel hidden" data-panel="tracker">
+          <form id="tracker-form" class="inline-form">
+            <label class="sr-only" for="tracker-sql">Read-only SQL</label>
+            <input id="tracker-sql" value="SELECT name FROM sqlite_master WHERE type='table'" />
+            <button class="primary" type="submit">Run</button>
+          </form>
+          <div class="table-wrap"><table id="tracker-table"><thead></thead><tbody></tbody></table></div>
+        </section>
+
+        <section class="panel hidden" data-panel="playbooks">
+          <form id="playbook-form" class="inline-form">
+            <label class="sr-only" for="playbook-name">Playbook name</label>
+            <input id="playbook-name" placeholder="Playbook name, e.g. leads" />
+            <button class="primary" type="submit">Run playbook</button>
+          </form>
+          <div id="playbook-runs" class="stack"></div>
+        </section>
+
+        <section class="panel hidden" data-panel="triggers">
+          <form id="trigger-form" class="inline-form">
+            <label class="sr-only" for="trigger-name">Trigger name</label>
+            <input id="trigger-name" placeholder="Name" />
+            <select id="trigger-kind" aria-label="Trigger kind">
+              <option value="interval">interval</option>
+              <option value="cron">cron</option>
+            </select>
+            <input id="trigger-every" placeholder="e.g. 5m or 0 9 * * *" />
+            <input id="trigger-prompt" placeholder="Prompt to inject" />
+            <button class="primary" type="submit">Add trigger</button>
+          </form>
+          <ul id="trigger-list" class="list"></ul>
+        </section>
+
+        <section class="panel hidden" data-panel="inbox">
+          <div id="inbox-list" class="stack"></div>
+          <form id="inbox-form" class="inline-form">
+            <label class="sr-only" for="inbox-text">Reply to Sentinel</label>
+            <input id="inbox-text" placeholder="Reply to the queen…" />
+            <button class="primary" type="submit">Send reply</button>
+          </form>
+        </section>
+
+        <section class="panel hidden" data-panel="soul">
+          <div class="grid2">
+            <article class="card">
+              <h3>Identity</h3>
+              <div id="soul-identity" class="stack"></div>
+              <div class="inline-form" style="margin-top:12px">
+                <button type="button" class="primary" id="soul-review">Review soul</button>
+                <select id="soul-mode" aria-label="Soul mode">
+                  <option value="off">off</option>
+                  <option value="review">review</option>
+                  <option value="auto">auto</option>
+                </select>
+              </div>
+              <p id="soul-status" class="muted small"></p>
+            </article>
+            <article class="card">
+              <h3>Proposals</h3>
+              <div id="soul-proposals" class="stack"></div>
+            </article>
+          </div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="colony-dialog">
+    <form id="colony-form" method="dialog">
+      <h2>New colony</h2>
+      <label for="new-name">Name</label>
+      <input id="new-name" required pattern="[A-Za-z0-9._-]+" placeholder="growth-lab" />
+      <label for="new-queen">Queen</label>
+      <select id="new-queen">
+        <option value="queen_growth">Queen Growth</option>
+        <option value="queen_tech">Queen Tech</option>
+        <option value="queen_ops">Queen Ops</option>
+        <option value="queen_finance">Queen Finance</option>
+      </select>
+      <label for="new-goal">Goal</label>
+      <textarea id="new-goal" rows="3" placeholder="What should this colony achieve?"></textarea>
+      <label for="new-workspace">Workspace (optional)</label>
+      <input id="new-workspace" placeholder="/absolute/path for file and terminal tools" />
+      <label class="check"><input type="checkbox" id="new-sentinel" /> Enable Sentinel</label>
+      <div class="dialog-actions">
+        <button type="button" id="colony-cancel" class="ghost">Cancel</button>
+        <button type="submit" class="primary">Create</button>
+      </div>
+      <p id="colony-error" class="error hidden"></p>
+    </form>
+  </dialog>
+
+  <template id="chat-message">
+    <article class="message"><header></header><div class="bubble"></div></article>
+  </template>
+
+  <script src="/ui/app.js" type="module"></script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+node_modules/
+.tmp-home/
+.tmp-*/
+.lanes/
+*.log
+.DS_Store
+program/watchdog.log
+program/alerts.jsonl

@@ -1,0 +1,2474 @@
+{
+  "meta": {
+    "generated_at": "2026-11-19T18:20:00+08:00",
+    "method": "independent grep + balanced-delimiter scan of TypeScript call sites; no AST dependency; manually cross-read every api module",
+    "scope": "core/frontend/src/api/*.ts plus ad-hoc api.* call sites in components/hooks/pages/lib; same-origin /api surface only",
+    "source_root": "/Users/mac/hive/core/frontend/src",
+    "client_modules": 20,
+    "files_with_calls": 25,
+    "raw_api_call_sites": 171,
+    "event_type_union_members": 75
+  },
+  "counts": {
+    "unique_http_routes": 168,
+    "json_or_multipart_routes": 165,
+    "url_only_get_routes": 3,
+    "sse_consumed": 3,
+    "sse_runtime_only_unused": 2,
+    "by_method": {
+      "DELETE": 15,
+      "GET": 68,
+      "PATCH": 9,
+      "POST": 61,
+      "PUT": 15
+    },
+    "by_domain": {
+      "discovery": 3,
+      "claude-code-queens": 2,
+      "colonies": 7,
+      "colony-data": 4,
+      "notifications": 3,
+      "sessions": 21,
+      "triggers": 6,
+      "workers": 7,
+      "tasks": 3,
+      "skills": 14,
+      "credentials": 11,
+      "config": 18,
+      "models": 6,
+      "mcp": 7,
+      "memories": 4,
+      "prompts": 3,
+      "queens": 26,
+      "sentinel": 4,
+      "global-data": 9,
+      "observability": 4,
+      "browser": 1,
+      "resources": 3
+    }
+  },
+  "routes": [
+    {
+      "method": "DELETE",
+      "path": "/agents",
+      "domain": "discovery",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "{ deleted: string; purged: boolean }",
+      "client_module": "agents.ts",
+      "export": "deleteAgent",
+      "note": "",
+      "call_sites": [
+        "agents.ts:11"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/agents/metadata",
+      "domain": "discovery",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "{ ok: boolean }",
+      "client_module": "agents.ts",
+      "export": "updateMetadata",
+      "note": "",
+      "call_sites": [
+        "agents.ts:18"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/discover",
+      "domain": "discovery",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "DiscoverResult",
+      "client_module": "agents.ts",
+      "export": "discover",
+      "note": "",
+      "call_sites": [
+        "agents.ts:5"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/claude-code-queens",
+      "domain": "claude-code-queens",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ queens: ClaudeCodeQueen[] }",
+      "client_module": "claudeCodeQueens.ts",
+      "export": "list",
+      "note": "",
+      "call_sites": [
+        "claudeCodeQueens.ts:36"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/claude-code-queens/{queenId}/conversations/{sessionId}",
+      "domain": "claude-code-queens",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ entries: TranscriptEntry[] }",
+      "client_module": "claudeCodeQueens.ts",
+      "export": "transcript",
+      "note": "",
+      "call_sites": [
+        "claudeCodeQueens.ts:39"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/colonies/tools-index",
+      "domain": "colonies",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ colonies: ColonySummary[] }",
+      "client_module": "colonies.ts",
+      "export": "list",
+      "note": "",
+      "call_sites": [
+        "colonies.ts:31"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/colonies/{colonyName}",
+      "domain": "colonies",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ deleted: string; purged: boolean }",
+      "client_module": "colonies.ts",
+      "export": "delete",
+      "note": "optional ?purge=true",
+      "call_sites": [
+        "colonies.ts:80"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/colonies/{colonyName}/reveal",
+      "domain": "colonies",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ path: string }",
+      "client_module": "colonies.ts",
+      "export": "revealFolder",
+      "note": "",
+      "call_sites": [
+        "colonies.ts:71"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/colonies/{colonyName}/scaffold",
+      "domain": "colonies",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "{ colony_id: string; scaffolded: boolean }",
+      "client_module": "colonies.ts",
+      "export": "scaffold",
+      "note": "",
+      "call_sites": [
+        "colonies.ts:37"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/colonies/{oldName}/rename",
+      "domain": "colonies",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "{ renamed: boolean; old_name: string; new_name: string }",
+      "client_module": "colonies.ts",
+      "export": "rename",
+      "note": "",
+      "call_sites": [
+        "colonies.ts:64"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/colony/{colonyName}/tools",
+      "domain": "colonies",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "ColonyToolsResponse",
+      "client_module": "colonies.ts",
+      "export": "getTools",
+      "note": "",
+      "call_sites": [
+        "colonies.ts:44"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/colony/{colonyName}/tools",
+      "domain": "colonies",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "ColonyToolsUpdateResult",
+      "client_module": "colonies.ts",
+      "export": "updateTools",
+      "note": "",
+      "call_sites": [
+        "colonies.ts:55"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/colonies/{colonyName}/data/changes?since={since}",
+      "domain": "colony-data",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "ChangesResponse",
+      "client_module": "colonyData.ts",
+      "export": "listChanges",
+      "note": "required ?since=<int cursor>",
+      "call_sites": [
+        "colonyData.ts:103"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/colonies/{colonyName}/data/tables",
+      "domain": "colony-data",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ tables: TableOverview[] }",
+      "client_module": "colonyData.ts",
+      "export": "listTables",
+      "note": "",
+      "call_sites": [
+        "colonyData.ts:73"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/colonies/{colonyName}/data/tables/{table}/rows",
+      "domain": "colony-data",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "TableRowsResponse",
+      "client_module": "colonyData.ts",
+      "export": "listRows",
+      "note": "optional limit/offset/order_by/order_dir",
+      "call_sites": [
+        "colonyData.ts:94"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/colonies/{colonyName}/data/tables/{table}/rows",
+      "domain": "colony-data",
+      "transport": "json",
+      "request_type": "UpdateRowRequest",
+      "response_type": "{ updated: number }",
+      "client_module": "colonyData.ts",
+      "export": "updateRow",
+      "note": "",
+      "call_sites": [
+        "colonyData.ts:109"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/colony/{colonyName}/notifications",
+      "domain": "notifications",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "SentinelConfig",
+      "client_module": "sentinel.ts",
+      "export": "getConfig",
+      "note": "",
+      "call_sites": [
+        "sentinel.ts:65"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/colony/{colonyName}/notifications",
+      "domain": "notifications",
+      "transport": "json",
+      "request_type": "SentinelConfigUpdate",
+      "response_type": "SentinelConfig",
+      "client_module": "sentinel.ts",
+      "export": "updateConfig",
+      "note": "",
+      "call_sites": [
+        "sentinel.ts:71"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/colony/{colonyName}/notifications/test",
+      "domain": "notifications",
+      "transport": "json",
+      "request_type": "override ?? {}",
+      "response_type": "TestSendResult",
+      "client_module": "sentinel.ts",
+      "export": "test",
+      "note": "",
+      "call_sites": [
+        "sentinel.ts:81"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/sessions",
+      "domain": "sessions",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ sessions: LiveSession[] }",
+      "client_module": "sessions.ts",
+      "export": "list",
+      "note": "",
+      "call_sites": [
+        "sessions.ts:71"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/sessions",
+      "domain": "sessions",
+      "transport": "json",
+      "request_type": "inline {colony_id?,model?,initial_prompt?,queen_resume_from?,initial_phase?,queen_name?,source_session_id?}",
+      "response_type": "LiveSession",
+      "client_module": "sessions.ts",
+      "export": "create",
+      "note": "",
+      "call_sites": [
+        "sessions.ts:59"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/sessions/history",
+      "domain": "sessions",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ sessions: HistorySession[] }",
+      "client_module": "sessions.ts",
+      "export": "history",
+      "note": "",
+      "call_sites": [
+        "sessions.ts:204"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/sessions/history/{sessionId}",
+      "domain": "sessions",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ deleted: string }",
+      "client_module": "sessions.ts",
+      "export": "deleteHistory",
+      "note": "",
+      "call_sites": [
+        "sessions.ts:219"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/sessions/{sessionId}",
+      "domain": "sessions",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ session_id: string; stopped: boolean }",
+      "client_module": "sessions.ts",
+      "export": "stop",
+      "note": "",
+      "call_sites": [
+        "sessions.ts:99"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/sessions/{sessionId}",
+      "domain": "sessions",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "LiveSessionDetail",
+      "client_module": "sessions.ts",
+      "export": "get",
+      "note": "",
+      "call_sites": [
+        "sessions.ts:75"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/sessions/{sessionId}/cancel-queen",
+      "domain": "sessions",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ cancelled: boolean; error?: string }",
+      "client_module": "execution.ts",
+      "export": "cancelQueen",
+      "note": "",
+      "call_sites": [
+        "execution.ts:59"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/sessions/{sessionId}/chat",
+      "domain": "sessions",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "ChatResult",
+      "client_module": "execution.ts",
+      "export": "chat",
+      "note": "",
+      "call_sites": [
+        "execution.ts:32"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/sessions/{sessionId}/compact-and-fork",
+      "domain": "sessions",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ new_session_id: string; queen_id: string; compacted_from: string; summary_chars: number; messages_compacted: number; }",
+      "client_module": "execution.ts",
+      "export": "compactAndFork",
+      "note": "",
+      "call_sites": [
+        "execution.ts:85"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/sessions/{sessionId}/credential-form",
+      "domain": "sessions",
+      "transport": "json",
+      "request_type": "inline {correlation_id,status,credential_id,account,keys?}",
+      "response_type": "{ saved?: string; resumed?: boolean; status?: string }",
+      "client_module": "credentials.ts",
+      "export": "submitAgentForm",
+      "note": "",
+      "call_sites": [
+        "credentials.ts:165"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/sessions/{sessionId}/dismiss-colony-pivot",
+      "domain": "sessions",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ dismissed: boolean; reason?: string }",
+      "client_module": "sessions.ts",
+      "export": "dismissColonyPivot",
+      "note": "",
+      "call_sites": [
+        "sessions.ts:194"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/sessions/{sessionId}/fork",
+      "domain": "sessions",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "{ session_id: string; queen_id: string }",
+      "client_module": "sessions.ts",
+      "export": "fork",
+      "note": "",
+      "call_sites": [
+        "sessions.ts:209"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/sessions/{sessionId}/mark-colony-spawned",
+      "domain": "sessions",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "{ session_id: string; colony_spawned: boolean; spawned_colony_id: string; }",
+      "client_module": "execution.ts",
+      "export": "markColonySpawned",
+      "note": "",
+      "call_sites": [
+        "execution.ts:73"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/sessions/{sessionId}/presence",
+      "domain": "sessions",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ ok: boolean; resumed: boolean }",
+      "client_module": "execution.ts",
+      "export": "markPresence",
+      "note": "",
+      "call_sites": [
+        "execution.ts:67"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/sessions/{sessionId}/queen-context",
+      "domain": "sessions",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "ChatResult",
+      "client_module": "execution.ts",
+      "export": "queenContext",
+      "note": "",
+      "call_sites": [
+        "execution.ts:41"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/sessions/{sessionId}/record-message",
+      "domain": "sessions",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "{ status: string; seq: number }",
+      "client_module": "execution.ts",
+      "export": "recordMessage",
+      "note": "",
+      "call_sites": [
+        "execution.ts:53"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/sessions/{sessionId}/report-bundle",
+      "domain": "sessions",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "PackagedBundle",
+      "client_module": "sessionReport.ts",
+      "export": "submitSessionReport",
+      "note": "",
+      "call_sites": [
+        "sessionReport.ts:36"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/sessions/{sessionId}/reveal",
+      "domain": "sessions",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ path: string }",
+      "client_module": "sessions.ts",
+      "export": "revealFolder",
+      "note": "",
+      "call_sites": [
+        "sessions.ts:200"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/sessions/{sessionId}/stats",
+      "domain": "sessions",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "Record<string, unknown>",
+      "client_module": "sessions.ts",
+      "export": "stats",
+      "note": "",
+      "call_sites": [
+        "sessions.ts:106"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/sessions/{sessionId}/title",
+      "domain": "sessions",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "{ session_id: string; title: string | null }",
+      "client_module": "sessions.ts",
+      "export": "setTitle",
+      "note": "",
+      "call_sites": [
+        "sessions.ts:215"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/sessions/{sessionId}/upload-attachment",
+      "domain": "sessions",
+      "transport": "multipart",
+      "request_type": "FormData (file)",
+      "response_type": "UploadAttachmentResult",
+      "client_module": "execution.ts",
+      "export": "uploadAttachment",
+      "note": "",
+      "call_sites": [
+        "execution.ts:23"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/sessions/{sessionId}/triggers",
+      "domain": "triggers",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ triggers: Array<{ trigger_id: string; trigger_type: string; trigger_config: Record<string, unknown>; name: string; task: string; enabled: boolean; last_fired_at?: string | null; next_due_at?: string | null; }>; }",
+      "client_module": "sessions.ts",
+      "export": "listTriggers",
+      "note": "",
+      "call_sites": [
+        "sessions.ts:84"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/sessions/{sessionId}/triggers",
+      "domain": "triggers",
+      "transport": "json",
+      "request_type": "inline {trigger_type,name,task,trigger_config}",
+      "response_type": "{ trigger_id: string; name: string; trigger_type: string; trigger_config: Record<string, unknown>; }",
+      "client_module": "sessions.ts",
+      "export": "createTrigger",
+      "note": "",
+      "call_sites": [
+        "sessions.ts:123"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/sessions/{sessionId}/triggers/{triggerId}",
+      "domain": "triggers",
+      "transport": "json",
+      "request_type": "inline {task?,trigger_config?}",
+      "response_type": "{ trigger_id: string; task: string; trigger_config: Record<string, unknown> }",
+      "client_module": "sessions.ts",
+      "export": "updateTrigger",
+      "note": "",
+      "call_sites": [
+        "sessions.ts:138"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/sessions/{sessionId}/triggers/{triggerId}/activate",
+      "domain": "triggers",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ status: string; trigger_id: string }",
+      "client_module": "sessions.ts",
+      "export": "activateTrigger",
+      "note": "",
+      "call_sites": [
+        "sessions.ts:144"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/sessions/{sessionId}/triggers/{triggerId}/deactivate",
+      "domain": "triggers",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ status: string; trigger_id: string }",
+      "client_module": "sessions.ts",
+      "export": "deactivateTrigger",
+      "note": "",
+      "call_sites": [
+        "sessions.ts:149"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/sessions/{sessionId}/triggers/{triggerId}/run",
+      "domain": "triggers",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ status: string; trigger_id: string }",
+      "client_module": "sessions.ts",
+      "export": "runTrigger",
+      "note": "",
+      "call_sites": [
+        "sessions.ts:154"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/sessions/{sessionId}/colony/skills",
+      "domain": "workers",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ skills: ColonySkill[] }",
+      "client_module": "colonyWorkers.ts",
+      "export": "listSkills",
+      "note": "",
+      "call_sites": [
+        "colonyWorkers.ts:131"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/sessions/{sessionId}/colony/tools",
+      "domain": "workers",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ tools: ColonyTool[] }",
+      "client_module": "colonyWorkers.ts",
+      "export": "listTools",
+      "note": "",
+      "call_sites": [
+        "colonyWorkers.ts:135"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/sessions/{sessionId}/workers",
+      "domain": "workers",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ workers: WorkerSummary[] }",
+      "client_module": "colonyWorkers.ts",
+      "export": "list | listLive",
+      "note": "",
+      "call_sites": [
+        "colonyWorkers.ts:114",
+        "workers.ts:31"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/sessions/{sessionId}/workers/stop-all",
+      "domain": "workers",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "StopAllWorkersResult",
+      "client_module": "workers.ts",
+      "export": "stopAllLive",
+      "note": "",
+      "call_sites": [
+        "workers.ts:40"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/sessions/{sessionId}/workers/{workerId}",
+      "domain": "workers",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ worker: WorkerDetailData }",
+      "client_module": "colonyWorkers.ts",
+      "export": "get",
+      "note": "",
+      "call_sites": [
+        "colonyWorkers.ts:119"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/sessions/{sessionId}/workers/{workerId}/conversation",
+      "domain": "workers",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "WorkerConversation",
+      "client_module": "colonyWorkers.ts",
+      "export": "getConversation",
+      "note": "",
+      "call_sites": [
+        "colonyWorkers.ts:125"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/sessions/{sessionId}/workers/{workerId}/stop",
+      "domain": "workers",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "StopWorkerResult",
+      "client_module": "workers.ts",
+      "export": "stopLive",
+      "note": "",
+      "call_sites": [
+        "workers.ts:34"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/sessions/{sessionId}/tasks",
+      "domain": "tasks",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "TaskListSnapshot",
+      "client_module": "tasks.ts",
+      "export": "getList",
+      "note": "",
+      "call_sites": [
+        "tasks.ts:59"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/sessions/{sessionId}/tasks/clear-completed",
+      "domain": "tasks",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "{ session_id: string; archived: number[] }",
+      "client_module": "tasks.ts",
+      "export": "clearCompleted",
+      "note": "",
+      "call_sites": [
+        "tasks.ts:92"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/sessions/{sessionId}/tasks/unarchive",
+      "domain": "tasks",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "{ session_id: string; restored: number[] }",
+      "client_module": "tasks.ts",
+      "export": "unarchive",
+      "note": "",
+      "call_sites": [
+        "tasks.ts:76"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/queen/{queenId}/skills",
+      "domain": "skills",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "ScopeSkillsResponse",
+      "client_module": "skills.ts",
+      "export": "listForQueen",
+      "note": "",
+      "call_sites": [
+        "skills.ts:114"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/queen/{queenId}/skills",
+      "domain": "skills",
+      "transport": "json",
+      "request_type": "SkillCreatePayload",
+      "response_type": "SkillRow",
+      "client_module": "skills.ts",
+      "export": "create",
+      "note": "",
+      "call_sites": [
+        "skills.ts:117"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/queen/{queenId}/skills/reload",
+      "domain": "skills",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ ok: boolean }",
+      "client_module": "skills.ts",
+      "export": "reload",
+      "note": "",
+      "call_sites": [
+        "skills.ts:154"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/queen/{queenId}/skills/{skillName}",
+      "domain": "skills",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ name: string; removed: boolean }",
+      "client_module": "skills.ts",
+      "export": "remove",
+      "note": "",
+      "call_sites": [
+        "skills.ts:149"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/queen/{queenId}/skills/{skillName}",
+      "domain": "skills",
+      "transport": "json",
+      "request_type": "SkillPatchPayload",
+      "response_type": "{ name: string; enabled: boolean | null; ok: boolean }",
+      "client_module": "skills.ts",
+      "export": "patch",
+      "note": "",
+      "call_sites": [
+        "skills.ts:120"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/queen/{queenId}/skills/{skillName}/body",
+      "domain": "skills",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "SkillDetailResponse",
+      "client_module": "skills.ts",
+      "export": "getBody",
+      "note": "",
+      "call_sites": [
+        "skills.ts:128"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/queen/{queenId}/skills/{skillName}/body",
+      "domain": "skills",
+      "transport": "json",
+      "request_type": "inline {body,description?}",
+      "response_type": "{ name: string; installed_path: string }",
+      "client_module": "skills.ts",
+      "export": "putBody",
+      "note": "",
+      "call_sites": [
+        "skills.ts:137"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/queen/{queenId}/skills/{skillName}/rename",
+      "domain": "skills",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "{ old_name: string; new_name: string; ok: boolean }",
+      "client_module": "skills.ts",
+      "export": "rename",
+      "note": "",
+      "call_sites": [
+        "skills.ts:143"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/sessions/{sessionId}/skill-installs",
+      "domain": "skills",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ requests: SkillInstallRequest[] }",
+      "client_module": "skills.ts",
+      "export": "listInstallRequests",
+      "note": "",
+      "call_sites": [
+        "skills.ts:160"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/sessions/{sessionId}/skill-installs/{requestId}",
+      "domain": "skills",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "{ name: string; decision: string; queen_told: boolean }",
+      "client_module": "skills.ts",
+      "export": "decideInstallRequest",
+      "note": "",
+      "call_sites": [
+        "skills.ts:169"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/skills",
+      "domain": "skills",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "AggregatedSkillsResponse",
+      "client_module": "skills.ts",
+      "export": "listAll",
+      "note": "",
+      "call_sites": [
+        "skills.ts:107"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/skills/scopes",
+      "domain": "skills",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "SkillScopesResponse",
+      "client_module": "skills.ts",
+      "export": "listScopes",
+      "note": "",
+      "call_sites": [
+        "skills.ts:108"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/skills/upload",
+      "domain": "skills",
+      "transport": "multipart",
+      "request_type": "FormData (SKILL.md or .zip)",
+      "response_type": "{ name: string; installed_path: string; replaced: boolean; scope: SkillScopeKind; target_id: string | null; enabled: boolean; }",
+      "client_module": "skills.ts",
+      "export": "upload",
+      "note": "",
+      "call_sites": [
+        "skills.ts:176"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/skills/{name}",
+      "domain": "skills",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "SkillDetailResponse",
+      "client_module": "skills.ts",
+      "export": "getDetail",
+      "note": "",
+      "call_sites": [
+        "skills.ts:110"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/credentials",
+      "domain": "credentials",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ credentials: CredentialInfo[] }",
+      "client_module": "credentials.ts",
+      "export": "list",
+      "note": "",
+      "call_sites": [
+        "credentials.ts:93"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/credentials",
+      "domain": "credentials",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "{ saved: string }",
+      "client_module": "credentials.ts",
+      "export": "save",
+      "note": "",
+      "call_sites": [
+        "credentials.ts:99"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/credentials/check-agent",
+      "domain": "credentials",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "{ required: AgentCredentialRequirement[]; has_aden_key: boolean }",
+      "client_module": "credentials.ts",
+      "export": "checkAgent",
+      "note": "",
+      "call_sites": [
+        "credentials.ts:134"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/credentials/local",
+      "domain": "credentials",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "{ saved: string; status: string; identity: Record<string, string>; valid: boolean | null; message: string | null; }",
+      "client_module": "credentials.ts",
+      "export": "saveLocal",
+      "note": "",
+      "call_sites": [
+        "credentials.ts:115"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/credentials/local/{credentialId}/{alias}",
+      "domain": "credentials",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ deleted: boolean }",
+      "client_module": "credentials.ts",
+      "export": "deleteLocal",
+      "note": "",
+      "call_sites": [
+        "credentials.ts:129"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/credentials/oauth-status",
+      "domain": "credentials",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "OAuthStatusResponse",
+      "client_module": "credentials.ts",
+      "export": "oauthStatus",
+      "note": "",
+      "call_sites": [
+        "credentials.ts:143"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/credentials/resync",
+      "domain": "credentials",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "ResyncResponse",
+      "client_module": "credentials.ts",
+      "export": "resync",
+      "note": "",
+      "call_sites": [
+        "credentials.ts:140"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/credentials/specs",
+      "domain": "credentials",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ specs: CredentialSpec[]; has_aden_key: boolean; accounts_by_provider?: Record<string, CredentialAccount[]>; }",
+      "client_module": "credentials.ts",
+      "export": "listSpecs",
+      "note": "",
+      "call_sites": [
+        "credentials.ts:86"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/credentials/validate-key",
+      "domain": "credentials",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "{ valid: boolean | null; message: string }",
+      "client_module": "credentials.ts",
+      "export": "validateKey",
+      "note": "",
+      "call_sites": [
+        "credentials.ts:146"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/credentials/{credentialId}",
+      "domain": "credentials",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ deleted: boolean }",
+      "client_module": "credentials.ts",
+      "export": "delete",
+      "note": "",
+      "call_sites": [
+        "credentials.ts:105"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/credentials/{credentialId}",
+      "domain": "credentials",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "CredentialInfo",
+      "client_module": "credentials.ts",
+      "export": "get",
+      "note": "",
+      "call_sites": [
+        "credentials.ts:96"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/config/external-skills",
+      "domain": "config",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ paths: string[]; resolved: ExternalSkillSource[]; suggestions?: ExternalSkillSource[] }",
+      "client_module": "config.ts",
+      "export": "getExternalSkills",
+      "note": "",
+      "call_sites": [
+        "config.ts:155"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/config/external-skills",
+      "domain": "config",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "{ paths: string[]; resolved: ExternalSkillSource[] }",
+      "client_module": "config.ts",
+      "export": "setExternalSkills",
+      "note": "",
+      "call_sites": [
+        "config.ts:160"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/config/features",
+      "domain": "config",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ features: FeaturesConfig }",
+      "client_module": "config.ts",
+      "export": "getFeatures",
+      "note": "",
+      "call_sites": [
+        "config.ts:162"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/config/features",
+      "domain": "config",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "{ features: Partial<FeaturesConfig>; colonies_applied: number }",
+      "client_module": "config.ts",
+      "export": "setFeatures",
+      "note": "",
+      "call_sites": [
+        "config.ts:169"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/config/llm",
+      "domain": "config",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "LLMConfig",
+      "client_module": "config.ts",
+      "export": "getLLMConfig",
+      "note": "",
+      "call_sites": [
+        "config.ts:115"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/config/llm",
+      "domain": "config",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "LLMConfigUpdateResponse",
+      "client_module": "config.ts",
+      "export": "setLLMConfig | setLLMConfigCustom | activateSubscription",
+      "note": "",
+      "call_sites": [
+        "config.ts:175",
+        "config.ts:180",
+        "config.ts:183"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/config/llm-sections",
+      "domain": "config",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "Record<LlmRole, LlmSection | null>",
+      "client_module": "config.ts",
+      "export": "getLlmSections",
+      "note": "",
+      "call_sites": [
+        "config.ts:121"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/config/llm-sections",
+      "domain": "config",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "{ role: LlmRole; section: LlmSection | null; sessions_swapped?: number }",
+      "client_module": "config.ts",
+      "export": "putLlmSection",
+      "note": "",
+      "call_sites": [
+        "config.ts:126"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/config/models",
+      "domain": "config",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "ModelsCatalogue",
+      "client_module": "config.ts",
+      "export": "getModels",
+      "note": "",
+      "call_sites": [
+        "config.ts:185"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/config/profile",
+      "domain": "config",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ displayName: string; about: string; theme: string; /** True when an avatar.{jpg|png|webp} exists in the hive config dir. */ has_avatar?: boolean; prompt_library_sort?: { my?: string; community?: string } | null; }",
+      "client_module": "config.ts",
+      "export": "getProfile",
+      "note": "",
+      "call_sites": [
+        "config.ts:188"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/config/profile",
+      "domain": "config",
+      "transport": "json",
+      "request_type": "Partial<profile fields>",
+      "response_type": "{ displayName: string; about: string; theme: string; prompt_library_sort?: { my?: string; community?: string } | null; }",
+      "client_module": "config.ts",
+      "export": "setProfile",
+      "note": "",
+      "call_sites": [
+        "config.ts:204"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/config/profile/avatar",
+      "domain": "config",
+      "transport": "multipart",
+      "request_type": "FormData (avatar)",
+      "response_type": "{ avatar_url: string }",
+      "client_module": "config.ts",
+      "export": "uploadAvatar",
+      "note": "",
+      "call_sites": [
+        "config.ts:229"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/config/provider-library",
+      "domain": "config",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ library: Record<string, LlmSection> }",
+      "client_module": "config.ts",
+      "export": "getProviderLibrary",
+      "note": "",
+      "call_sites": [
+        "config.ts:133"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/config/provider-library",
+      "domain": "config",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "{ name: string; section: LlmSection | null }",
+      "client_module": "config.ts",
+      "export": "putProviderLibraryEntry",
+      "note": "",
+      "call_sites": [
+        "config.ts:138"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/config/provider-library/apply",
+      "domain": "config",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "{ role: LlmRole; section: LlmSection; sessions_swapped?: number }",
+      "client_module": "config.ts",
+      "export": "applyProviderLibraryEntry",
+      "note": "",
+      "call_sites": [
+        "config.ts:146"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/config/rate-limits",
+      "domain": "config",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ limits: RateLimitEntry[] }",
+      "client_module": "config.ts",
+      "export": "getRateLimits",
+      "note": "",
+      "call_sites": [
+        "config.ts:221"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/config/rate-limits",
+      "domain": "config",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "{ limits: RateLimitEntry[]; warnings?: string[] }",
+      "client_module": "config.ts",
+      "export": "setRateLimits",
+      "note": "",
+      "call_sites": [
+        "config.ts:224"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/startup-status",
+      "domain": "config",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "StartupStatus",
+      "client_module": "config.ts",
+      "export": "getStartupStatus",
+      "note": "",
+      "call_sites": [
+        "config.ts:117"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/models/endpoints/{name}",
+      "domain": "models",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ deleted: string }",
+      "client_module": "models.ts",
+      "export": "deleteEndpoint",
+      "note": "",
+      "call_sites": [
+        "models.ts:93"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/models/endpoints/{name}",
+      "domain": "models",
+      "transport": "json",
+      "request_type": "inline {api_base?,api_key?}",
+      "response_type": "ModelEndpoint",
+      "client_module": "models.ts",
+      "export": "saveEndpoint",
+      "note": "",
+      "call_sites": [
+        "models.ts:91"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/models/endpoints/{name}/models",
+      "domain": "models",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ models: EndpointModel[] }",
+      "client_module": "models.ts",
+      "export": "endpointModels",
+      "note": "optional ?fresh=1",
+      "call_sites": [
+        "models.ts:87"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/models/overview",
+      "domain": "models",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "ModelsOverview",
+      "client_module": "models.ts",
+      "export": "overview",
+      "note": "",
+      "call_sites": [
+        "models.ts:78"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/models/slots/{slot}",
+      "domain": "models",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ slot: SlotId; summary: null }",
+      "client_module": "models.ts",
+      "export": "clearSlot",
+      "note": "",
+      "call_sites": [
+        "models.ts:84"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/models/slots/{slot}",
+      "domain": "models",
+      "transport": "json",
+      "request_type": "ModelChoice",
+      "response_type": "{ slot: SlotId; summary: SlotSummary | null; sessions_switched: number }",
+      "client_module": "models.ts",
+      "export": "setSlot",
+      "note": "",
+      "call_sites": [
+        "models.ts:81"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/mcp/servers",
+      "domain": "mcp",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ servers: McpServer[] }",
+      "client_module": "mcp.ts",
+      "export": "listServers",
+      "note": "",
+      "call_sites": [
+        "mcp.ts:63"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/mcp/servers",
+      "domain": "mcp",
+      "transport": "json",
+      "request_type": "AddMcpServerBody",
+      "response_type": "{ server: McpServer; hint: string }",
+      "client_module": "mcp.ts",
+      "export": "addServer",
+      "note": "",
+      "call_sites": [
+        "mcp.ts:65"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/mcp/servers/{name}",
+      "domain": "mcp",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ removed: string }",
+      "client_module": "mcp.ts",
+      "export": "removeServer",
+      "note": "",
+      "call_sites": [
+        "mcp.ts:67"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/mcp/servers/{name}/disable",
+      "domain": "mcp",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ name: string; enabled: boolean }",
+      "client_module": "mcp.ts",
+      "export": "setEnabled",
+      "note": "one call site selects enable/disable",
+      "call_sites": [
+        "mcp.ts:69"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/mcp/servers/{name}/enable",
+      "domain": "mcp",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ name: string; enabled: boolean }",
+      "client_module": "mcp.ts",
+      "export": "setEnabled",
+      "note": "one call site selects enable/disable",
+      "call_sites": [
+        "mcp.ts:69"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/mcp/servers/{name}/health",
+      "domain": "mcp",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "McpHealthResult",
+      "client_module": "mcp.ts",
+      "export": "checkHealth",
+      "note": "",
+      "call_sites": [
+        "mcp.ts:78"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/mcp/servers/{name}/mode",
+      "domain": "mcp",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "{ name: string; mode: McpMode; hint: string }",
+      "client_module": "mcp.ts",
+      "export": "setMode",
+      "note": "",
+      "call_sites": [
+        "mcp.ts:73"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/memories",
+      "domain": "memories",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "ListResponse",
+      "client_module": "memories.ts",
+      "export": "list",
+      "note": "",
+      "call_sites": [
+        "memories.ts:57"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/memories/file",
+      "domain": "memories",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ deleted: string }",
+      "client_module": "memories.ts",
+      "export": "delete",
+      "note": "required ?path=<relative .md>",
+      "call_sites": [
+        "memories.ts:72"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/memories/file",
+      "domain": "memories",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "Memory & { content: string }",
+      "client_module": "memories.ts",
+      "export": "read",
+      "note": "required ?path=<relative .md>",
+      "call_sites": [
+        "memories.ts:61"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/memories/file",
+      "domain": "memories",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "Memory & { content: string }",
+      "client_module": "memories.ts",
+      "export": "update",
+      "note": "required ?path=<relative .md>",
+      "call_sites": [
+        "memories.ts:65"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/prompts",
+      "domain": "prompts",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ prompts: CustomPrompt[] }",
+      "client_module": "prompts.ts",
+      "export": "list",
+      "note": "",
+      "call_sites": [
+        "prompts.ts:19"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/prompts",
+      "domain": "prompts",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "CustomPrompt",
+      "client_module": "prompts.ts",
+      "export": "create | update",
+      "note": "",
+      "call_sites": [
+        "prompts.ts:22",
+        "prompts.ts:41"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/prompts/{promptId}",
+      "domain": "prompts",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ deleted: string }",
+      "client_module": "prompts.ts",
+      "export": "update | delete",
+      "note": "",
+      "call_sites": [
+        "prompts.ts:48",
+        "prompts.ts:61"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/queen/create",
+      "domain": "queens",
+      "transport": "json",
+      "request_type": "inline {name,title?,persona?,queen_id?}",
+      "response_type": "{ queen: { id: string; name: string; title: string; has_avatar?: boolean; custom?: boolean; }; }",
+      "client_module": "queens.ts",
+      "export": "createQueen",
+      "note": "",
+      "call_sites": [
+        "queens.ts:226"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/queen/profiles",
+      "domain": "queens",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ queens: Array<{ id: string; name: string; title: string; portrait?: PortraitDescriptor | null; has_avatar?: boolean; custom?: boolean; }>; }",
+      "client_module": "queens.ts",
+      "export": "list",
+      "note": "",
+      "call_sites": [
+        "queens.ts:207"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/queen/removed",
+      "domain": "queens",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ queens: Array<{ id: string; name: string; title: string; custom?: boolean }> }",
+      "client_module": "queens.ts",
+      "export": "listRemoved",
+      "note": "",
+      "call_sites": [
+        "queens.ts:246"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/queen/{queenId}/avatar",
+      "domain": "queens",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ has_avatar: false }",
+      "client_module": "queens.ts",
+      "export": "deleteAvatar",
+      "note": "",
+      "call_sites": [
+        "queens.ts:310"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/queen/{queenId}/avatar",
+      "domain": "queens",
+      "transport": "multipart",
+      "request_type": "FormData (avatar)",
+      "response_type": "{ avatar_url: string }",
+      "client_module": "queens.ts",
+      "export": "uploadAvatar",
+      "note": "",
+      "call_sites": [
+        "queens.ts:304"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/queen/{queenId}/llm",
+      "domain": "queens",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "QueenLlm",
+      "client_module": "queens.ts",
+      "export": "getLlm",
+      "note": "",
+      "call_sites": [
+        "queens.ts:255"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/queen/{queenId}/llm",
+      "domain": "queens",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "QueenLlm & { sessions_switched: number }",
+      "client_module": "queens.ts",
+      "export": "setLlm",
+      "note": "",
+      "call_sites": [
+        "queens.ts:260"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/queen/{queenId}/overview",
+      "domain": "queens",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "QueenOverview",
+      "client_module": "queens.ts",
+      "export": "getOverview",
+      "note": "",
+      "call_sites": [
+        "queens.ts:271"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/queen/{queenId}/persona",
+      "domain": "queens",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ queen_id: string; persona: QueenPersona }",
+      "client_module": "queens.ts",
+      "export": "getPersona",
+      "note": "",
+      "call_sites": [
+        "queens.ts:264"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/queen/{queenId}/persona",
+      "domain": "queens",
+      "transport": "json",
+      "request_type": "Partial<Record<keyof QueenPersona, unknown>>",
+      "response_type": "{ queen_id: string; persona: QueenPersona }",
+      "client_module": "queens.ts",
+      "export": "setPersona",
+      "note": "",
+      "call_sites": [
+        "queens.ts:268"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/queen/{queenId}/profile",
+      "domain": "queens",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "QueenProfile",
+      "client_module": "queens.ts",
+      "export": "getProfile",
+      "note": "",
+      "call_sites": [
+        "queens.ts:250"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/queen/{queenId}/profile",
+      "domain": "queens",
+      "transport": "json",
+      "request_type": "Partial<QueenProfile>",
+      "response_type": "QueenProfile",
+      "client_module": "queens.ts",
+      "export": "updateProfile",
+      "note": "",
+      "call_sites": [
+        "queens.ts:298"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/queen/{queenId}/remove",
+      "domain": "queens",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ queen_id: string; removed: boolean }",
+      "client_module": "queens.ts",
+      "export": "removeQueen",
+      "note": "",
+      "call_sites": [
+        "queens.ts:238"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/queen/{queenId}/restore",
+      "domain": "queens",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ queen_id: string; removed: boolean }",
+      "client_module": "queens.ts",
+      "export": "restoreQueen",
+      "note": "",
+      "call_sites": [
+        "queens.ts:242"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/queen/{queenId}/session",
+      "domain": "queens",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "QueenSessionResult",
+      "client_module": "queens.ts",
+      "export": "getOrCreateSession",
+      "note": "",
+      "call_sites": [
+        "queens.ts:314"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/queen/{queenId}/session/new",
+      "domain": "queens",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "QueenSessionResult",
+      "client_module": "queens.ts",
+      "export": "createNewSession",
+      "note": "",
+      "call_sites": [
+        "queens.ts:338"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/queen/{queenId}/session/select",
+      "domain": "queens",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "QueenSessionResult",
+      "client_module": "queens.ts",
+      "export": "selectSession",
+      "note": "",
+      "call_sites": [
+        "queens.ts:321"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/queen/{queenId}/soul",
+      "domain": "queens",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "QueenSoul",
+      "client_module": "queens.ts",
+      "export": "getSoul",
+      "note": "",
+      "call_sites": [
+        "queens.ts:274"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/queen/{queenId}/soul",
+      "domain": "queens",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "QueenSoul",
+      "client_module": "queens.ts",
+      "export": "setSoul",
+      "note": "",
+      "call_sites": [
+        "queens.ts:278"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/queen/{queenId}/soul/proposals/{proposalId}/decide",
+      "domain": "queens",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "QueenSoul",
+      "client_module": "queens.ts",
+      "export": "decideSoulProposal",
+      "note": "",
+      "call_sites": [
+        "queens.ts:282"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/queen/{queenId}/soul/proposals/{proposalId}/probe",
+      "domain": "queens",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ started: boolean }",
+      "client_module": "queens.ts",
+      "export": "probeSoulProposal",
+      "note": "",
+      "call_sites": [
+        "queens.ts:290"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/queen/{queenId}/soul/reflect",
+      "domain": "queens",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "{ started: boolean }",
+      "client_module": "queens.ts",
+      "export": "reflectSoul",
+      "note": "",
+      "call_sites": [
+        "queens.ts:294"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/queen/{queenId}/soul/rollback",
+      "domain": "queens",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "QueenSoul",
+      "client_module": "queens.ts",
+      "export": "rollbackSoul",
+      "note": "",
+      "call_sites": [
+        "queens.ts:286"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/queen/{queenId}/tools",
+      "domain": "queens",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "QueenToolsResetResult",
+      "client_module": "queens.ts",
+      "export": "resetTools",
+      "note": "",
+      "call_sites": [
+        "queens.ts:362"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/queen/{queenId}/tools",
+      "domain": "queens",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "QueenToolsResponse",
+      "client_module": "queens.ts",
+      "export": "getTools",
+      "note": "",
+      "call_sites": [
+        "queens.ts:346"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/queen/{queenId}/tools",
+      "domain": "queens",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "QueenToolsUpdateResult",
+      "client_module": "queens.ts",
+      "export": "updateTools",
+      "note": "",
+      "call_sites": [
+        "queens.ts:355"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/sentinel/credentials",
+      "domain": "sentinel",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "SentinelCredentialStatus",
+      "client_module": "sentinel.ts",
+      "export": "credentialStatus",
+      "note": "",
+      "call_sites": [
+        "sentinel.ts:88"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/sentinel/slack/validate",
+      "domain": "sentinel",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "SlackValidateResult",
+      "client_module": "sentinel.ts",
+      "export": "validateSlack",
+      "note": "",
+      "call_sites": [
+        "sentinel.ts:100"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/sentinel/telegram/detect-chat",
+      "domain": "sentinel",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "TelegramDetectResult",
+      "client_module": "sentinel.ts",
+      "export": "detectTelegramChat",
+      "note": "",
+      "call_sites": [
+        "sentinel.ts:96"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/sentinel/telegram/validate",
+      "domain": "sentinel",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "TelegramValidateResult",
+      "client_module": "sentinel.ts",
+      "export": "validateTelegram",
+      "note": "",
+      "call_sites": [
+        "sentinel.ts:92"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/global/data/changes",
+      "domain": "global-data",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "GlobalChangesResponse",
+      "client_module": "globalData.ts",
+      "export": "listChanges",
+      "note": "optional ?since=cursor",
+      "call_sites": [
+        "globalData.ts:83"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/global/data/foreign-keys",
+      "domain": "global-data",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ foreign_keys: ForeignKey[] }",
+      "client_module": "globalData.ts",
+      "export": "foreignKeys",
+      "note": "",
+      "call_sites": [
+        "globalData.ts:164"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/global/data/tables",
+      "domain": "global-data",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ tables: TableOverview[] }",
+      "client_module": "globalData.ts",
+      "export": "listTables",
+      "note": "",
+      "call_sites": [
+        "globalData.ts:78"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/global/data/tables/{table}/group-counts",
+      "domain": "global-data",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "{ table: string; group_by: string; groups: GroupCount[] }",
+      "client_module": "globalData.ts",
+      "export": "groupCounts",
+      "note": "",
+      "call_sites": [
+        "globalData.ts:135"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/global/data/tables/{table}/query",
+      "domain": "global-data",
+      "transport": "json",
+      "request_type": "QueryRequest",
+      "response_type": "TableRowsResponse",
+      "client_module": "globalData.ts",
+      "export": "query",
+      "note": "",
+      "call_sites": [
+        "globalData.ts:116"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/global/data/tables/{table}/rows",
+      "domain": "global-data",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "{ deleted: number }",
+      "client_module": "globalData.ts",
+      "export": "deleteRow",
+      "note": "",
+      "call_sites": [
+        "globalData.ts:157"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/global/data/tables/{table}/rows",
+      "domain": "global-data",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "TableRowsResponse",
+      "client_module": "globalData.ts",
+      "export": "listRows",
+      "note": "optional limit/offset/order_by/order_dir",
+      "call_sites": [
+        "globalData.ts:102"
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/global/data/tables/{table}/rows",
+      "domain": "global-data",
+      "transport": "json",
+      "request_type": "UpdateRowRequest",
+      "response_type": "{ updated: number }",
+      "client_module": "globalData.ts",
+      "export": "updateRow",
+      "note": "",
+      "call_sites": [
+        "globalData.ts:108"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/global/data/tables/{table}/rows",
+      "domain": "global-data",
+      "transport": "json",
+      "request_type": "inline object",
+      "response_type": "{ inserted: number; pk: Record<string, CellValue> }",
+      "client_module": "globalData.ts",
+      "export": "insertRow",
+      "note": "",
+      "call_sites": [
+        "globalData.ts:150"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/runtime-logs",
+      "domain": "observability",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "RuntimeLogsPayload",
+      "client_module": "use-runtime-logs.ts",
+      "export": "useRuntimeLogs",
+      "note": "query after=<seq>&boot=<id>",
+      "call_sites": [
+        "use-runtime-logs.ts:34"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/sessions/{sessionId}/events/history",
+      "domain": "observability",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "EventsHistoryPage",
+      "client_module": "sessions.ts",
+      "export": "eventsHistory",
+      "note": "optional limit/before_offset/before_index",
+      "call_sites": [
+        "sessions.ts:179"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/sessions/{sessionId}/live_tools",
+      "domain": "observability",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "LiveToolsResponse",
+      "client_module": "DebugPanel.tsx",
+      "export": "liveTools",
+      "note": "",
+      "call_sites": [
+        "DebugPanel.tsx:82"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/sessions/{sessionId}/snapshot",
+      "domain": "observability",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ queen_busy_reason?: string | null }",
+      "client_module": "queen-dm.tsx",
+      "export": "stallWatchdog",
+      "note": "",
+      "call_sites": [
+        "queen-dm.tsx:2471",
+        "colony-chat.tsx:1780"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/browser/status",
+      "domain": "browser",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "BridgeStatusPayload",
+      "client_module": "BrowserStatusBadge.tsx",
+      "export": "poll",
+      "note": "optional ?session_id=",
+      "call_sites": [
+        "BrowserStatusBadge.tsx:138"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/config/profile/avatar",
+      "domain": "resources",
+      "transport": "url",
+      "request_type": "none",
+      "response_type": "image/*",
+      "client_module": "config.ts (apiUrl)",
+      "export": "img src / avatar version",
+      "note": "user avatar binary",
+      "call_sites": [
+        "config.ts (apiUrl):img src / avatar version"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/queen/{queenId}/avatar",
+      "domain": "resources",
+      "transport": "url",
+      "request_type": "none",
+      "response_type": "image/*",
+      "client_module": "queens.ts (apiUrl)",
+      "export": "img src / avatar version",
+      "note": "avatar binary; POST upload + DELETE on same path",
+      "call_sites": [
+        "queens.ts (apiUrl):img src / avatar version"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/sessions/{sessionId}/attachment/{filename}",
+      "domain": "resources",
+      "transport": "url",
+      "request_type": "none",
+      "response_type": "application/octet-stream",
+      "client_module": "lib/attachments.ts",
+      "export": "resolveAttachmentUrl",
+      "note": "resolves hive-attachment:// refs; basename only",
+      "call_sites": [
+        "lib/attachments.ts:resolveAttachmentUrl"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/colonies/{colonyName}/active-session",
+      "domain": "other",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ session: HistorySession | null }",
+      "client_module": "sessions.ts",
+      "export": "active",
+      "note": "",
+      "call_sites": [
+        "sessions.ts:237"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/colonies/{colonyName}/sessions",
+      "domain": "other",
+      "transport": "json",
+      "request_type": "none",
+      "response_type": "{ sessions: HistorySession[] }",
+      "client_module": "sessions.ts",
+      "export": "list",
+      "note": "",
+      "call_sites": [
+        "sessions.ts:230"
+      ]
+    }
+  ],
+  "sse": [
+    {
+      "path": "/sessions/{sessionId}/events",
+      "client_module": "hooks/use-sse.ts",
+      "export": "useSSE / useMultiSSE",
+      "events": "AgentEvent envelope with EventTypeName `type` (see count below); server filters via ?types=, worker detail via ?watch=",
+      "note": "primary per-session stream; 404 is terminal (session gone) and triggers resume-from-disk"
+    },
+    {
+      "path": "/events/global",
+      "client_module": "hooks/use-sse.ts",
+      "export": "useGlobalEvents",
+      "events": "credential_provider_connected, credential_provider_disconnected, tool_catalog_refreshed, tools_config_changed, crm_changed",
+      "note": "one refcounted subscription shared by every listener"
+    },
+    {
+      "path": "/sessions/live",
+      "client_module": "hooks/use-live-sessions.ts",
+      "export": "useLiveSessions",
+      "events": "named `snapshot` frames: {sessions: LiveSessionRow[], network?: RuntimeNetworkSnapshot}; other event names ignored",
+      "note": "sidebar/global live-session feed"
+    }
+  ],
+  "sse_unused": [
+    {
+      "path": "/browser/status/stream",
+      "note": "named in client.ts comment as desktop-shell only; web badge polls GET /browser/status"
+    },
+    {
+      "path": "/sessions/{sessionId}/workers/stream",
+      "note": "registered by the Go runtime; no frontend subscribeSse call"
+    }
+  ],
+  "uncounted_dynamic_resources": [
+    {
+      "method": "GET",
+      "path": "{bundle_path}",
+      "client_module": "sessionReport.ts",
+      "export": "submitSessionReport",
+      "note": "runtime returns bundle_path (credential-scrubbed tar.gz); apiUrl() downloads it. Not a literal route, so excluded from route count."
+    }
+  ],
+  "unclassified": [
+    {
+      "item": "PATCH /prompts/{promptId}",
+      "why": "frontend never calls it; prompts.update() comments say PUT is rejected (405) and emulates update via POST + DELETE. Go runtime does register PATCH /api/prompts/{prompt_id}. Contract should document POST+DELETE, not PUT/PATCH."
+    },
+    {
+      "item": "POST /queen/{queenId}/soul/proposals/{proposalId}/probe",
+      "why": "called by queens.ts but absent from go_hive's route table (only /decide is registered there). Either a go_hive port gap or a dead frontend call; verified by grep of internal/server/*.go."
+    },
+    {
+      "item": "skills family (/skills, /queen/{id}/skills, /sessions/{id}/skill-installs) and /credentials/local, /sessions/{id}/credential-form",
+      "why": "called by the frontend but no matching mux.HandleFunc in go_hive. Likely go_hive port gaps; the frontend code is unambiguous."
+    },
+    {
+      "item": "GET /browser/status/stream and GET /sessions/{id}/workers/stream",
+      "why": "SSE endpoints the runtime registers, but this web frontend does not subscribe (polling /browser/status instead; no workers/stream call)."
+    },
+    {
+      "item": "GET {bundle_path}",
+      "why": "dynamic download URL minted by report-bundle; cannot be counted as a static route."
+    }
+  ]
+}
