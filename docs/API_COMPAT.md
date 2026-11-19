@@ -104,31 +104,31 @@ _pi_hive:_ 30 implemented, 2 partial. Sessions are durable records under PI_HIVE
 
 ## Queens (21)
 
-_pi_hive:_ 7 implemented, 14 partial. Profile, overview, persona, the single model, the real tool catalog and colony-backed soul are served; catalog mutations (create/remove/restore), avatars, per-queen model/persona/tools edits and the queen-DM session store answer explicit 400/404/409.
+_pi_hive:_ 21 implemented. Catalog create/remove/restore, avatars, per-queen profile/model/persona/tools edits and the queen-DM session persist under `hiveHome()/queens/<id>` and re-bind that queen's live sessions.
 
 | Method | Path | Client (source) | Request | Response | SSE events | pi_hive |
 |---|---|---|---|---|---|---|
 | GET | `/queen/profiles` | queens (`queens.ts:207`) | — | {queens: Array<{id, name, title, portrait?, has_avatar?, custom?}>} | — | implemented |
-| POST | `/queen/create` | queens (`queens.ts:226`) | inline {name, title?, persona?, queen_id?} | {queen} | — | partial |
-| POST | `/queen/:queen/remove` | queens (`queens.ts:238`) | — | {queen_id, removed} | — | partial |
-| POST | `/queen/:queen/restore` | queens (`queens.ts:242`) | — | {queen_id, removed} | — | partial |
+| POST | `/queen/create` | queens (`queens.ts:226`) | inline {name, title?, persona?, queen_id?} | {queen} | — | implemented |
+| POST | `/queen/:queen/remove` | queens (`queens.ts:238`) | — | {queen_id, removed} | — | implemented |
+| POST | `/queen/:queen/restore` | queens (`queens.ts:242`) | — | {queen_id, removed} | — | implemented |
 | GET | `/queen/removed` | queens (`queens.ts:246`) | — | {queens} | — | implemented |
 | GET | `/queen/:queen/profile` | queens (`queens.ts:250`) | — | QueenProfile | — | implemented |
-| PATCH | `/queen/:queen/profile` | queens (`queens.ts:298`) | Partial<QueenProfile> | QueenProfile | — | partial |
+| PATCH | `/queen/:queen/profile` | queens (`queens.ts:298`) | Partial<QueenProfile> | QueenProfile | — | implemented |
 | GET | `/queen/:queen/llm` | queens (`queens.ts:255`) | — | QueenLlm | — | implemented |
-| PUT | `/queen/:queen/llm` | queens (`queens.ts:260`) | inline {section: LlmSection\|null} | QueenLlm & {sessions_switched} | — | partial |
+| PUT | `/queen/:queen/llm` | queens (`queens.ts:260`) | inline {section: LlmSection\|null} | QueenLlm & {sessions_switched} | — | implemented |
 | GET | `/queen/:queen/persona` | queens (`queens.ts:264`) | — | {queen_id, persona: QueenPersona} | — | implemented |
-| PUT | `/queen/:queen/persona` | queens (`queens.ts:268`) | inline {persona: Partial<QueenPersona>} | {queen_id, persona} | — | partial |
+| PUT | `/queen/:queen/persona` | queens (`queens.ts:268`) | inline {persona: Partial<QueenPersona>} | {queen_id, persona} | — | implemented |
 | GET | `/queen/:queen/overview` | queens (`queens.ts:271`) | — | QueenOverview | — | implemented |
-| POST | `/queen/:queen/avatar` | queens (`queens.ts:304`) | multipart form-data: avatar | {avatar_url} | — | partial |
-| DELETE | `/queen/:queen/avatar` | queens (`queens.ts:310`) | — | {has_avatar: false} | — | partial |
-| GET | `/queen/:queen/avatar` | queens (`QueenAvatar.tsx:30`) | — | image bytes | — | partial |
-| POST | `/queen/:queen/session` | queens (`queens.ts:314`) | inline {initial_prompt?, initial_phase?} | QueenSessionResult | — | partial |
-| POST | `/queen/:queen/session/select` | queens (`queens.ts:321`) | inline {session_id} | QueenSessionResult | — | partial |
-| POST | `/queen/:queen/session/new` | queens (`queens.ts:338`) | inline {initial_prompt?, initial_phase?, crm_setup?} | QueenSessionResult | — | partial |
+| POST | `/queen/:queen/avatar` | queens (`queens.ts:304`) | multipart form-data: avatar | {avatar_url} | — | implemented |
+| DELETE | `/queen/:queen/avatar` | queens (`queens.ts:310`) | — | {has_avatar: false} | — | implemented |
+| GET | `/queen/:queen/avatar` | queens (`QueenAvatar.tsx:30`) | — | image bytes | — | implemented |
+| POST | `/queen/:queen/session` | queens (`queens.ts:314`) | inline {initial_prompt?, initial_phase?} | QueenSessionResult | — | implemented |
+| POST | `/queen/:queen/session/select` | queens (`queens.ts:321`) | inline {session_id} | QueenSessionResult | — | implemented |
+| POST | `/queen/:queen/session/new` | queens (`queens.ts:338`) | inline {initial_prompt?, initial_phase?, crm_setup?} | QueenSessionResult | — | implemented |
 | GET | `/queen/:queen/tools` | queens (`queens.ts:346`) | — | QueenToolsResponse | — | implemented |
-| PATCH | `/queen/:queen/tools` | queens (`queens.ts:355`) | inline {enabled_mcp_tools: string[]\|null} | QueenToolsUpdateResult | — | partial |
-| DELETE | `/queen/:queen/tools` | queens (`queens.ts:362`) | — | QueenToolsResetResult | — | partial |
+| PATCH | `/queen/:queen/tools` | queens (`queens.ts:355`) | inline {enabled_mcp_tools: string[]\|null} | QueenToolsUpdateResult | — | implemented |
+| DELETE | `/queen/:queen/tools` | queens (`queens.ts:362`) | — | QueenToolsResetResult | — | implemented |
 
 ## Soul (6)
 

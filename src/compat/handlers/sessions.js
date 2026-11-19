@@ -414,7 +414,7 @@ function mergeTriggerConfig(trigger, patch) {
   return merged;
 }
 
-function parseMultipart(raw, contentType) {
+export function parseMultipart(raw, contentType) {
   const match = /boundary=(?:"([^"]+)"|([^;]+))/i.exec(contentType || "");
   if (!match) throw new BodyError("expected multipart/form-data");
   const boundary = (match[1] || match[2]).trim();

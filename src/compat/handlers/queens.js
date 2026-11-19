@@ -41,6 +41,30 @@ import { memoryTools } from "../../runtime/memory-tools.js";
 import { planTools, skillTools, soulTools, trackerTools } from "../../runtime/tools.js";
 import { ROUTE_STATUS } from "../router.js";
 import { BUILT_IN_QUEENS } from "./organization.js";
+import {
+  deleteAvatar as deleteAvatarFile,
+  hasAvatar,
+  isRemoved,
+  listQueenIds,
+  MAX_AVATAR_BYTES,
+  patchProfile,
+  isSafeQueenId,
+  queenExistsOnDisk,
+  readAvatar,
+  readDmSession,
+  readLlm,
+  readPersona,
+  readProfile,
+  readTools,
+  saveAvatar,
+  setRemoved,
+  writeDmSession,
+  writeLlm,
+  writePersona,
+  writeTools,
+} from "../../domain/queen-state.js";
+import { SessionStore } from "../sessions.js";
+import { parseMultipart } from "./sessions.js";
 
 const IMPLEMENTED = Object.freeze({ status: ROUTE_STATUS.IMPLEMENTED, official: true });
 const PARTIAL = Object.freeze({ status: ROUTE_STATUS.PARTIAL, official: true });
@@ -279,11 +303,69 @@ function queenFromParams(params) {
   return QUEEN_BY_ID.get(queenId) || null;
 }
 
-/** Resolve the queen or return a 404 descriptor. */
+/** Catalog row for one queen: built-in identity overlaid with stored state. */
+function catalogEntry(queenId) {
+  const builtIn = QUEEN_BY_ID.get(queenId);
+  const stored = readProfile(queenId);
+  return {
+    id: queenId,
+    name: stored?.name ?? builtIn?.name ?? queenId,
+    title: stored?.title ?? builtIn?.title ?? "",
+    has_avatar: hasAvatar(queenId),
+    custom: !builtIn,
+  };
+}
+
+/** Every queen pi_hive can serve: the built-ins plus custom rows, minus removed. */
+export function queenCatalog() {
+  const rows = [];
+  for (const builtIn of BUILT_IN_QUEENS) {
+    if (isRemoved(builtIn.id)) continue;
+    rows.push(catalogEntry(builtIn.id));
+  }
+  for (const id of listQueenIds()) {
+    if (QUEEN_BY_ID.has(id) || isRemoved(id)) continue;
+    rows.push(catalogEntry(id));
+  }
+  return rows;
+}
+
+/** Removed queens, so the UI's restore list reflects the removal markers. */
+export function removedQueenCatalog() {
+  const ids = new Set([...BUILT_IN_QUEENS.map((queen) => queen.id), ...listQueenIds()]);
+  return [...ids].filter((id) => isRemoved(id)).map((id) => catalogEntry(id));
+}
+
+/** Turn a display name into a safe queen id. */
+function queenIdFromName(name) {
+  const slug = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 60);
+  const candidate = slug ? `queen_${slug}` : `queen_${Date.now()}`;
+  return /^[a-z0-9][a-z0-9_-]{0,63}$/.test(candidate) ? candidate : null;
+}
+
+/** Resolve the queen or return a 404 descriptor. Removed queens are unknown. */
 function resolveQueen(params) {
   const queenId = typeof params?.queen === "string" ? params.queen : "";
-  const queen = QUEEN_BY_ID.get(queenId) || null;
+  const known = QUEEN_BY_ID.has(queenId) || queenExistsOnDisk(queenId);
+  const queen = known && !isRemoved(queenId) ? catalogEntry(queenId) : null;
   return { queenId, queen, error: queen ? null : notFoundQueen(queenId) };
+}
+
+/**
+ * Resolve a queen that may be removed. Restore and removal bookkeeping need
+ * her id even while she is hidden from the catalog.
+ */
+function resolveKnownQueen(params) {
+  const queenId = typeof params?.queen === "string" ? params.queen : "";
+  const known = QUEEN_BY_ID.has(queenId) || queenExistsOnDisk(queenId);
+  return {
+    queenId,
+    error: known ? null : notFoundQueen(queenId),
+  };
 }
 
 /**
@@ -325,23 +407,27 @@ function colonyNamesFor(queenId) {
 
 export function buildQueenProfile(queenId) {
   const queen = QUEEN_BY_ID.get(queenId);
-  if (!queen) return null;
+  const stored = readProfile(queenId);
+  if (!queen && !stored) return null;
   const persona = personaOf(queenId);
   const colonies = colonyNamesFor(queenId);
+  const avatar = readAvatar(queenId);
   const profile = {
-    id: queen.id,
-    name: queen.name,
-    title: queen.title,
-    summary: persona.summary,
-    experience: persona.details.length
-      ? [{ role: queen.title, details: [...persona.details] }]
-      : [],
-    skills: persona.skills,
-    portrait: null,
-    has_avatar: false,
-    custom: false,
+    id: queenId,
+    name: stored?.name ?? queen?.name ?? queenId,
+    title: stored?.title ?? queen?.title ?? "",
+    summary: stored?.summary ?? persona.summary,
+    experience:
+      stored?.experience ??
+      (persona.details.length ? [{ role: queen?.title ?? "", details: [...persona.details] }] : []),
+    skills: stored?.skills ?? persona.skills,
+    portrait: avatar ? `/api/queen/${queenId}/avatar` : (stored?.portrait ?? null),
+    has_avatar: Boolean(avatar),
+    custom: !queen,
   };
-  if (colonies.length) {
+  if (stored?.signature_achievement !== undefined) {
+    profile.signature_achievement = stored.signature_achievement;
+  } else if (colonies.length) {
     profile.signature_achievement = `Leads ${colonies.length} pi_hive colon${
       colonies.length === 1 ? "y" : "ies"
     }: ${colonies.join(", ")}.`;
@@ -352,26 +438,50 @@ export function buildQueenProfile(queenId) {
 function buildQueenPersona(queenId) {
   const queen = QUEEN_BY_ID.get(queenId);
   const persona = personaOf(queenId);
+  const stored = readPersona(queenId);
+  if (stored) return { queen_id: queenId, persona: structuredClone(stored) };
+  const storedProfile = readProfile(queenId);
   return {
     queen_id: queenId,
     persona: {
-      name: queen.name,
-      title: queen.title,
+      name: storedProfile?.name ?? queen?.name ?? queenId,
+      title: storedProfile?.title ?? queen?.title ?? "",
       core_traits: persona.summary,
       skills: persona.skills,
     },
   };
 }
 
-/** The one process-wide pi_hive model. Queens share it. */
+/** Per-queen LLM section; when unset the queen follows the process model. */
 function buildQueenLlm(queenId) {
   return {
     queen_id: queenId,
-    section: null,
+    section: readLlm(queenId),
     default_model: modelConfig().modelId,
   };
 }
 
+/**
+ * Sessions bound to this queen, newest first. Used by the tool allowlist and
+ * LLM routes, which report how many durable sessions they re-bound.
+ */
+function queenSessionRecords(store, queenId) {
+  return store
+    .list({ includeStopped: true })
+    .filter((record) => record.queen_id === queenId);
+}
+
+const sessionStoresByHome = new Map();
+
+function sessionStoreFor(ctx = {}) {
+  const home = ctx.hiveHome || process.env.PI_HIVE_HOME || hiveHome();
+  let store = sessionStoresByHome.get(home);
+  if (!store) {
+    store = new SessionStore({ home });
+    sessionStoresByHome.set(home, store);
+  }
+  return store;
+}
 function countMemoryFiles(dir) {
   try {
     return fs
@@ -589,11 +699,13 @@ function buildLifecycleTools() {
 export function buildQueenTools(queenId) {
   const lifecycle = buildLifecycleTools();
   const byName = new Map(lifecycle.map((tool) => [tool.name, tool]));
+  const allowlist = readTools(queenId);
+  const enabled = allowlist === null ? null : new Set(allowlist);
   return {
     queen_id: queenId,
-    // No per-queen allowlist exists; the role default is the effective surface.
-    enabled_mcp_tools: null,
-    is_role_default: true,
+    // null is the role default; a list is an explicit per-queen allowlist.
+    enabled_mcp_tools: allowlist,
+    is_role_default: allowlist === null,
     stale: false,
     lifecycle,
     synthetic: [],
@@ -601,7 +713,7 @@ export function buildQueenTools(queenId) {
     categories: TOOL_CATEGORIES.map((category) => ({
       name: category.name,
       tools: category.tools.filter((name) => byName.has(name)),
-      in_role_default: true,
+      in_role_default: enabled === null || category.tools.some((name) => enabled.has(name)),
       // QueenRuntime hands every tool to the agent; nothing is search-on-demand.
       always_enabled: true,
     })),
@@ -901,37 +1013,57 @@ function nextSoulFromSections(current, sections) {
 // Route handlers
 // ---------------------------------------------------------------------------
 
-const getRemoved = async () => ({ status: 200, body: { queens: [] } });
+const getRemoved = async () => ({ status: 200, body: { queens: removedQueenCatalog() } });
 
 const createQueen = async ({ req }) => {
   const parsed = await readJsonBody(req);
   if (!parsed.ok) return invalid("Invalid JSON body");
-  return unsupported(
-    null,
-    "Custom queens are not supported: pi_hive's catalog is the four built-in role identities and there is no profile.yaml store",
-    { supported: QUEEN_IDS },
-  );
+  const body = parsed.body;
+  const name = typeof body.name === "string" ? body.name.trim() : "";
+  if (!name) return invalid("name is required");
+  const requested = typeof body.queen_id === "string" ? body.queen_id.trim() : "";
+  const queenId = requested || queenIdFromName(name);
+  if (!queenId || !isSafeQueenId(queenId)) {
+    return invalid("queen_id must match [a-z0-9][a-z0-9_-]{0,63}");
+  }
+  if (QUEEN_BY_ID.has(queenId)) {
+    return fail(409, `Queen '${queenId}' is a built-in role and cannot be re-created`, {
+      type: "conflict",
+      queen_id: queenId,
+    });
+  }
+  if (isRemoved(queenId)) {
+    return fail(409, `Queen '${queenId}' is removed; restore her first`, {
+      type: "conflict",
+      queen_id: queenId,
+    });
+  }
+  const title = typeof body.title === "string" ? body.title : "";
+  patchProfile(queenId, { name, title, created_at: isoNow() });
+  if (isPlainObject(body.persona)) writePersona(queenId, structuredClone(body.persona));
+  return { status: 200, body: { queen: catalogEntry(queenId) } };
 };
 
 const removeQueen = async ({ params }) => {
-  const { queenId, error } = resolveQueen(params);
-  if (error) return error;
-  return unsupported(
-    queenId,
-    `Queen '${queenId}' cannot be removed: she is a built-in role identity and colonies bind to her queen_id`,
-    { queen_id: queenId },
-  );
+  const resolved = resolveKnownQueen(params);
+  if (resolved.error) return resolved.error;
+  setRemoved(resolved.queenId, true);
+  return { status: 200, body: { queen_id: resolved.queenId, removed: true } };
 };
 
 const restoreQueen = async ({ params }) => {
-  const { queenId, error } = resolveQueen(params);
-  if (error) return error;
-  return unsupported(
-    queenId,
-    `Queen '${queenId}' cannot be restored: she was never removed and pi_hive has no queen catalog store`,
-    { queen_id: queenId },
-  );
+  const resolved = resolveKnownQueen(params);
+  if (resolved.error) return resolved.error;
+  if (!isRemoved(resolved.queenId)) {
+    return fail(400, `Queen '${resolved.queenId}' cannot be restored: she was never removed`, {
+      type: "invalid_request",
+      queen_id: resolved.queenId,
+    });
+  }
+  setRemoved(resolved.queenId, false);
+  return { status: 200, body: { queen_id: resolved.queenId, removed: false } };
 };
+
 
 const getProfile = async ({ params }) => {
   const { queenId, error } = resolveQueen(params);
@@ -940,15 +1072,24 @@ const getProfile = async ({ params }) => {
 };
 
 const updateProfile = async ({ params, req }) => {
-  const { queenId, error } = resolveQueen(params);
-  if (error) return error;
+  const resolved = resolveQueen(params);
+  if (resolved.error) return resolved.error;
   const parsed = await readJsonBody(req);
   if (!parsed.ok) return invalid("Invalid JSON body");
-  return unsupported(
-    queenId,
-    "Queen profiles are code-defined role identities; pi_hive has no editable profile.yaml store, so PATCH is not supported",
-    { queen_id: queenId },
-  );
+  const body = parsed.body;
+  const patch = {};
+  for (const key of ["name", "title", "summary", "portrait", "signature_achievement"]) {
+    if (typeof body[key] === "string") patch[key] = body[key];
+  }
+  if (Array.isArray(body.experience)) patch.experience = structuredClone(body.experience);
+  if (Array.isArray(body.skills)) patch.skills = structuredClone(body.skills);
+  if (!Object.keys(patch).length) {
+    return invalid("No profile fields to update", {
+      fields: ["name", "title", "summary", "experience", "skills", "portrait", "signature_achievement"],
+    });
+  }
+  patchProfile(resolved.queenId, patch);
+  return { status: 200, body: buildQueenProfile(resolved.queenId) };
 };
 
 const getLlm = async ({ params }) => {
@@ -957,16 +1098,36 @@ const getLlm = async ({ params }) => {
   return { status: 200, body: buildQueenLlm(queenId) };
 };
 
-const putLlm = async ({ params, req }) => {
-  const { queenId, error } = resolveQueen(params);
-  if (error) return error;
+const putLlm = async ({ params, req, ctx }) => {
+  const resolved = resolveQueen(params);
+  if (resolved.error) return resolved.error;
   const parsed = await readJsonBody(req);
   if (!parsed.ok) return invalid("Invalid JSON body");
-  return unsupported(
-    queenId,
-    "Per-queen models are not supported: pi_hive runs one process-wide model from PI_HIVE_MODEL and has no queen_llm section store",
-    { queen_id: queenId },
-  );
+  const body = parsed.body;
+  if (!("section" in body)) return invalid("section is required");
+  const section = body.section === null ? null : structuredClone(body.section);
+  if (section !== null && !isPlainObject(section)) {
+    return invalid("section must be an object or null");
+  }
+  writeLlm(resolved.queenId, section);
+  // Sessions bound to this queen switch to the new model, or back to the
+  // process-wide default when the section is cleared.
+  const model = section?.model ?? modelConfig().modelId;
+  const store = sessionStoreFor(ctx);
+  const records = queenSessionRecords(store, resolved.queenId);
+  let switched = 0;
+  for (const record of records) {
+    if (store.update(record.session_id, { model })) switched += 1;
+  }
+  return {
+    status: 200,
+    body: {
+      queen_id: resolved.queenId,
+      section,
+      default_model: modelConfig().modelId,
+      sessions_switched: switched,
+    },
+  };
 };
 
 const getPersona = async ({ params }) => {
@@ -976,15 +1137,30 @@ const getPersona = async ({ params }) => {
 };
 
 const putPersona = async ({ params, req }) => {
-  const { queenId, error } = resolveQueen(params);
-  if (error) return error;
+  const resolved = resolveQueen(params);
+  if (resolved.error) return resolved.error;
   const parsed = await readJsonBody(req);
   if (!parsed.ok) return invalid("Invalid JSON body");
-  return unsupported(
-    queenId,
-    "Queen personas cannot be replaced: pi_hive builds queen identity from code in src/runtime/queen.js and stores no profile.yaml",
-    { queen_id: queenId },
-  );
+  const body = parsed.body;
+  if (!("persona" in body)) return invalid("persona is required");
+  const persona = body.persona === null ? null : structuredClone(body.persona);
+  if (persona !== null && !isPlainObject(persona)) {
+    return invalid("persona must be an object or null");
+  }
+  if (persona !== null) {
+    for (const key of ["name", "title", "core_traits"]) {
+      if (persona[key] !== undefined && typeof persona[key] !== "string") {
+        return invalid(`persona.${key} must be a string`);
+      }
+    }
+    for (const key of ["skills", "behavior_triggers"]) {
+      if (persona[key] !== undefined && !Array.isArray(persona[key])) {
+        return invalid(`persona.${key} must be an array`);
+      }
+    }
+  }
+  writePersona(resolved.queenId, persona);
+  return { status: 200, body: buildQueenPersona(resolved.queenId) };
 };
 
 const getOverview = async ({ params }) => {
@@ -993,68 +1169,152 @@ const getOverview = async ({ params }) => {
   return { status: 200, body: buildQueenOverview(queenId) };
 };
 
-const postAvatar = async ({ params }) => {
-  const { queenId, error } = resolveQueen(params);
-  if (error) return error;
-  return unsupported(
-    queenId,
-    "Avatar upload is not supported: pi_hive has no queen avatar file store and queen portraits are not images on disk",
-    { queen_id: queenId },
-  );
+/** Raw request bytes, from `req.body` or an async-iterable request. */
+async function readRawRequest(req) {
+  if (!req) return Buffer.alloc(0);
+  if (Buffer.isBuffer(req.body)) return req.body;
+  if (typeof req.body === "string") return Buffer.from(req.body, "utf8");
+  if (req.body !== undefined && req.body !== null) {
+    return Buffer.from(JSON.stringify(req.body));
+  }
+  if (typeof req[Symbol.asyncIterator] !== "function") return Buffer.alloc(0);
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of req) {
+    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
+    size += buf.length;
+    if (size > MAX_AVATAR_BYTES * 2) throw new Error("request body too large");
+    chunks.push(buf);
+  }
+  return Buffer.concat(chunks);
+}
+
+const postAvatar = async ({ params, req }) => {
+  const resolved = resolveQueen(params);
+  if (resolved.error) return resolved.error;
+  let parts;
+  try {
+    parts = parseMultipart(await readRawRequest(req), req.headers["content-type"]);
+  } catch (error) {
+    return invalid(error?.message || "Expected multipart/form-data with an avatar field");
+  }
+  const field = parts.find((part) => part.name === "avatar" && part.data?.length);
+  if (!field) return invalid("multipart field 'avatar' is required");
+  if (field.data.length > MAX_AVATAR_BYTES) {
+    return invalid(`avatar exceeds ${MAX_AVATAR_BYTES} bytes`);
+  }
+  const contentType = field.contentType || "application/octet-stream";
+  if (!/^(image\/|application\/octet-stream)/.test(contentType)) {
+    return invalid("avatar must be an image", { content_type: contentType });
+  }
+  const saved = saveAvatar(resolved.queenId, { bytes: field.data, contentType });
+  return { status: 200, body: saved };
 };
 
 const deleteAvatar = async ({ params }) => {
-  const { queenId, error } = resolveQueen(params);
-  if (error) return error;
-  return unsupported(
-    queenId,
-    "Avatar deletion is not supported: pi_hive has no queen avatar file store",
-    { queen_id: queenId },
-  );
+  const resolved = resolveQueen(params);
+  if (resolved.error) return resolved.error;
+  deleteAvatarFile(resolved.queenId);
+  return { status: 200, body: { queen_id: resolved.queenId, has_avatar: false } };
 };
 
 const getAvatar = async ({ params }) => {
-  const { queenId, error } = resolveQueen(params);
-  if (error) return error;
-  return fail(404, `No avatar found for queen '${queenId}': pi_hive has no queen avatar store`, {
-    type: "not_found",
-    queen_id: queenId,
-  });
-};
-
-const queenSessionUnsupported = (queenId) =>
-  unsupported(
-    queenId,
-    "Queen DM sessions are not supported: pi_hive runs chat inside a colony (POST /api/colonies/:colony/chat) and has no queen session store",
-    { queen_id: queenId },
-  );
-
-const getOrCreateSession = async ({ params, req }) => {
-  const { queenId, error } = resolveQueen(params);
-  if (error) return error;
-  const parsed = await readJsonBody(req);
-  if (!parsed.ok) return invalid("Invalid JSON body");
-  return queenSessionUnsupported(queenId);
-};
-
-const selectSession = async ({ params, req }) => {
-  const { queenId, error } = resolveQueen(params);
-  if (error) return error;
-  const parsed = await readJsonBody(req);
-  if (!parsed.ok) return invalid("Invalid JSON body");
-  const sessionId = parsed.body.session_id;
-  if (typeof sessionId !== "string" || !sessionId.trim()) {
-    return invalid("session_id is required", { queen_id: queenId });
+  const resolved = resolveQueen(params);
+  if (resolved.error) return resolved.error;
+  const avatar = readAvatar(resolved.queenId);
+  if (!avatar) {
+    return fail(404, `Queen '${resolved.queenId}' has no avatar`, { type: "not_found" });
   }
-  return queenSessionUnsupported(queenId);
+  // Raw bytes: the UI loads this as an <img> source.
+  return { status: 200, body: avatar.buffer, content_type: avatar.content_type };
 };
 
-const newSession = async ({ params, req }) => {
-  const { queenId, error } = resolveQueen(params);
-  if (error) return error;
+/**
+ * Create a durable session bound to this queen and remember it as her DM
+ * session. `crm_setup` is recorded on the record for the UI's CRM flow.
+ */
+function createQueenSession(store, queenId, body = {}) {
+  const entry = catalogEntry(queenId);
+  const record = store.create({
+    queenId,
+    queenName: entry.name,
+    model: readLlm(queenId)?.model ?? modelConfig().modelId,
+    initialPrompt: typeof body.initial_prompt === "string" ? body.initial_prompt : null,
+    phase: typeof body.initial_phase === "string" ? body.initial_phase : null,
+    title: entry.name,
+  });
+  if (body.crm_setup === true) store.update(record.session_id, { crm_setup: true });
+  writeDmSession(queenId, record.session_id);
+  return record;
+}
+
+function sessionBody(queenId, record, status) {
+  return {
+    session_id: record.session_id,
+    queen_id: queenId,
+    status,
+    colony_id: record.colony_id ?? null,
+  };
+}
+
+/** POST /queen/:q/session — resume the queen's DM session, else create one. */
+const getOrCreateSession = async ({ params, req, ctx }) => {
+  const resolved = resolveQueen(params);
+  if (resolved.error) return resolved.error;
   const parsed = await readJsonBody(req);
   if (!parsed.ok) return invalid("Invalid JSON body");
-  return queenSessionUnsupported(queenId);
+  const store = sessionStoreFor(ctx);
+  const storedId = readDmSession(resolved.queenId);
+  if (storedId) {
+    const record = store.get(storedId);
+    if (record) {
+      return {
+        status: 200,
+        body: sessionBody(
+          resolved.queenId,
+          record,
+          store.isLive(storedId) ? "live" : "resumed",
+        ),
+      };
+    }
+  }
+  const record = createQueenSession(store, resolved.queenId, parsed.body);
+  return { status: 200, body: sessionBody(resolved.queenId, record, "created") };
+};
+
+/** POST /queen/:q/session/select — bind an existing session to this queen. */
+const selectSession = async ({ params, req, ctx }) => {
+  const resolved = resolveQueen(params);
+  if (resolved.error) return resolved.error;
+  const parsed = await readJsonBody(req);
+  if (!parsed.ok) return invalid("Invalid JSON body");
+  const sessionId = typeof parsed.body.session_id === "string" ? parsed.body.session_id : "";
+  if (!sessionId) return invalid("session_id is required");
+  const store = sessionStoreFor(ctx);
+  const record = store.get(sessionId);
+  if (!record) {
+    return fail(404, `Session '${sessionId}' not found`, { type: "not_found", session_id: sessionId });
+  }
+  if (record.queen_id && record.queen_id !== resolved.queenId) {
+    return fail(409, `Session '${sessionId}' belongs to queen '${record.queen_id}'`, {
+      type: "conflict",
+      session_id: sessionId,
+      queen_id: record.queen_id,
+    });
+  }
+  store.markLive(sessionId);
+  writeDmSession(resolved.queenId, sessionId);
+  return { status: 200, body: sessionBody(resolved.queenId, record, "resumed") };
+};
+
+/** POST /queen/:q/session/new — always start a fresh session for this queen. */
+const newSession = async ({ params, req, ctx }) => {
+  const resolved = resolveQueen(params);
+  if (resolved.error) return resolved.error;
+  const parsed = await readJsonBody(req);
+  if (!parsed.ok) return invalid("Invalid JSON body");
+  const record = createQueenSession(sessionStoreFor(ctx), resolved.queenId, parsed.body);
+  return { status: 200, body: sessionBody(resolved.queenId, record, "created") };
 };
 
 const getTools = async ({ params }) => {
@@ -1063,25 +1323,45 @@ const getTools = async ({ params }) => {
   return { status: 200, body: buildQueenTools(queenId) };
 };
 
-const toolsUnsupported = (queenId, verb) =>
-  unsupported(
-    queenId,
-    `${verb} is not supported: pi_hive has no per-queen tools.json sidecar; the queen tool surface is fixed in src/runtime/queen.js`,
-    { queen_id: queenId },
-  );
+/** Re-bind every session of this queen to the new allowlist. */
+function refreshQueenSessions(store, queenId, allowlist) {
+  let refreshed = 0;
+  for (const record of queenSessionRecords(store, queenId)) {
+    if (store.update(record.session_id, { tool_allowlist: allowlist })) refreshed += 1;
+  }
+  return refreshed;
+}
 
-const patchTools = async ({ params, req }) => {
-  const { queenId, error } = resolveQueen(params);
-  if (error) return error;
+/** PATCH /queen/:q/tools — set the per-queen MCP tool allowlist. */
+const patchTools = async ({ params, req, ctx }) => {
+  const resolved = resolveQueen(params);
+  if (resolved.error) return resolved.error;
   const parsed = await readJsonBody(req);
   if (!parsed.ok) return invalid("Invalid JSON body");
-  return toolsUnsupported(queenId, "Tool allowlist updates");
+  const body = parsed.body;
+  if (!("enabled_mcp_tools" in body)) return invalid("enabled_mcp_tools is required");
+  const allowlist = body.enabled_mcp_tools;
+  if (allowlist !== null && (!Array.isArray(allowlist) || allowlist.some((n) => typeof n !== "string"))) {
+    return invalid("enabled_mcp_tools must be an array of tool names or null");
+  }
+  writeTools(resolved.queenId, allowlist);
+  const refreshed = refreshQueenSessions(sessionStoreFor(ctx), resolved.queenId, allowlist);
+  return {
+    status: 200,
+    body: { ...buildQueenTools(resolved.queenId), refreshed_sessions: refreshed },
+  };
 };
 
-const deleteTools = async ({ params }) => {
-  const { queenId, error } = resolveQueen(params);
-  if (error) return error;
-  return toolsUnsupported(queenId, "Tool allowlist reset");
+/** DELETE /queen/:q/tools — drop the allowlist and return to the role default. */
+const deleteTools = async ({ params, ctx }) => {
+  const resolved = resolveQueen(params);
+  if (resolved.error) return resolved.error;
+  writeTools(resolved.queenId, null);
+  const refreshed = refreshQueenSessions(sessionStoreFor(ctx), resolved.queenId, null);
+  return {
+    status: 200,
+    body: { ...buildQueenTools(resolved.queenId), removed: true, refreshed_sessions: refreshed },
+  };
 };
 
 const getSoul = async ({ params }) => {
@@ -1357,32 +1637,32 @@ export function registerQueenRoutes(registry, ctx = {}) {
 
   const routes = [
     // Creation / catalog membership
-    ["POST", "/api/queen/create", createQueen, PARTIAL, "custom queens are not supported; 400 with the four built-in ids"],
-    ["POST", "/api/queen/:queen/remove", removeQueen, PARTIAL, "built-in queens cannot be removed; 400 for a known queen, 404 otherwise"],
-    ["POST", "/api/queen/:queen/restore", restoreQueen, PARTIAL, "no removed-queen store; 400 for a known queen, 404 otherwise"],
-    ["GET", "/api/queen/removed", getRemoved, IMPLEMENTED, "valid empty list: pi_hive never removes a built-in queen"],
+    ["POST", "/api/queen/create", createQueen, IMPLEMENTED, "custom queens persist in the queen-state store"],
+    ["POST", "/api/queen/:queen/remove", removeQueen, IMPLEMENTED, "removal persists; built-ins stay restorable"],
+    ["POST", "/api/queen/:queen/restore", restoreQueen, IMPLEMENTED, "undoes a persisted removal; 400 when never removed"],
+    ["GET", "/api/queen/removed", getRemoved, IMPLEMENTED, "lists queens whose removal is persisted"],
 
     // Identity
     ["GET", "/api/queen/:queen/profile", getProfile, IMPLEMENTED, "role profile derived from the runtime persona and real colonies"],
-    ["PATCH", "/api/queen/:queen/profile", updateProfile, PARTIAL, "profiles are code-defined; 400 unsupported"],
-    ["GET", "/api/queen/:queen/llm", getLlm, IMPLEMENTED, "the single process model; section is always null"],
-    ["PUT", "/api/queen/:queen/llm", putLlm, PARTIAL, "per-queen models are not supported; 400"],
+    ["PATCH", "/api/queen/:queen/profile", updateProfile, IMPLEMENTED, "profile overrides persist per queen"],
+    ["GET", "/api/queen/:queen/llm", getLlm, IMPLEMENTED, "the process model plus this queen's stored llm section"],
+    ["PUT", "/api/queen/:queen/llm", putLlm, IMPLEMENTED, "per-queen llm section persists and re-binds her sessions"],
     ["GET", "/api/queen/:queen/persona", getPersona, IMPLEMENTED, "persona fields derived from the runtime role identity"],
-    ["PUT", "/api/queen/:queen/persona", putPersona, PARTIAL, "personas are not editable; 400"],
+    ["PUT", "/api/queen/:queen/persona", putPersona, IMPLEMENTED, "persona overrides persist; null restores the role persona"],
     ["GET", "/api/queen/:queen/overview", getOverview, IMPLEMENTED, "real memory file counts and queen session files"],
-    ["POST", "/api/queen/:queen/avatar", postAvatar, PARTIAL, "no avatar store; 400 unsupported"],
-    ["DELETE", "/api/queen/:queen/avatar", deleteAvatar, PARTIAL, "no avatar store; 400 unsupported"],
-    ["GET", "/api/queen/:queen/avatar", getAvatar, PARTIAL, "no avatar store; explicit 404"],
+    ["POST", "/api/queen/:queen/avatar", postAvatar, IMPLEMENTED, "multipart avatar bytes stored under the queen state dir"],
+    ["DELETE", "/api/queen/:queen/avatar", deleteAvatar, IMPLEMENTED, "deletes the stored avatar bytes"],
+    ["GET", "/api/queen/:queen/avatar", getAvatar, IMPLEMENTED, "serves stored avatar bytes with their content type"],
 
     // Queen sessions
-    ["POST", "/api/queen/:queen/session", getOrCreateSession, PARTIAL, "no queen DM session store; 400"],
-    ["POST", "/api/queen/:queen/session/select", selectSession, PARTIAL, "no queen DM session store; validates session_id then 400"],
-    ["POST", "/api/queen/:queen/session/new", newSession, PARTIAL, "no queen DM session store; 400"],
+    ["POST", "/api/queen/:queen/session", getOrCreateSession, IMPLEMENTED, "resumes or creates the queen's durable DM session"],
+    ["POST", "/api/queen/:queen/session/select", selectSession, IMPLEMENTED, "binds an existing session; 404 unknown, 409 foreign queen"],
+    ["POST", "/api/queen/:queen/session/new", newSession, IMPLEMENTED, "creates a fresh durable session for the queen"],
 
     // Tools
-    ["GET", "/api/queen/:queen/tools", getTools, IMPLEMENTED, "the fixed QueenRuntime tool catalog"],
-    ["PATCH", "/api/queen/:queen/tools", patchTools, PARTIAL, "no per-queen allowlist; 400"],
-    ["DELETE", "/api/queen/:queen/tools", deleteTools, PARTIAL, "no per-queen allowlist; 400"],
+    ["GET", "/api/queen/:queen/tools", getTools, IMPLEMENTED, "the QueenRuntime catalog as this queen's allowlist has narrowed it"],
+    ["PATCH", "/api/queen/:queen/tools", patchTools, IMPLEMENTED, "per-queen MCP allowlist persists and re-binds her sessions"],
+    ["DELETE", "/api/queen/:queen/tools", deleteTools, IMPLEMENTED, "clears the allowlist back to the role default"],
 
     // Soul
     ["GET", "/api/queen/:queen/soul", getSoul, IMPLEMENTED, "soul.json of the queen's primary colony; disabled when absent"],

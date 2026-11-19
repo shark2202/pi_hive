@@ -35,8 +35,8 @@
 | Colony list | ✅ | `GET /api/colonies`, CLI |
 | Colony import/export | ⬜ | tar import/export not implemented |
 | Queen identity / persona | 🟡 | 4 built-in personas; no full 13/Org Chart |
-| Queen profile editing | ⬜ | No UI/API for persona/model/craft |
-| Queen DM vs colony chat | 🟡 | One Queen per colony; no separate DM session |
+| Queen profile editing | ✅ | PATCH profile, PUT persona, PUT llm, tools allowlist, avatar upload/read/delete persist per queen under `hiveHome()/queens/<id>`; edits re-bind her live sessions |
+| Queen DM vs colony chat | ✅ | Queen DM sessions are durable (create/resume/select/new) and bound to the queen; colony chat stays a separate session |
 | Multiple colonies per Queen | ✅ | By directory/metadata |
 | Worker | ✅ | Ephemeral, one task, narrow tools |
 | Worker profiles | 🟡 | Stored in metadata; not enforced for tool/credential routing |

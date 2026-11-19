@@ -32,11 +32,11 @@ function makeRegistry() {
 }
 
 /** Invoke a registered handler with a fake req/res and assert no socket write. */
-async function call(registry, method, pathname, { body, ctx } = {}) {
+async function call(registry, method, pathname, { body, ctx, headers } = {}) {
   const match = registry.match(method, pathname);
   assert.ok(match, `no route for ${method} ${pathname}`);
 
-  const req = { method, url: pathname, headers: {} };
+  const req = { method, url: pathname, headers: headers ?? {} };
   if (body !== undefined) req.body = body;
 
   let wrote = false;
@@ -210,26 +210,26 @@ function proposalFileLines() {
 // ---------------------------------------------------------------------------
 
 const EXPECTED_STATUS = new Map([
-  ["POST /api/queen/create", "partial"],
-  ["POST /api/queen/:queen/remove", "partial"],
-  ["POST /api/queen/:queen/restore", "partial"],
+  ["POST /api/queen/create", "implemented"],
+  ["POST /api/queen/:queen/remove", "implemented"],
+  ["POST /api/queen/:queen/restore", "implemented"],
   ["GET /api/queen/removed", "implemented"],
   ["GET /api/queen/:queen/profile", "implemented"],
-  ["PATCH /api/queen/:queen/profile", "partial"],
+  ["PATCH /api/queen/:queen/profile", "implemented"],
   ["GET /api/queen/:queen/llm", "implemented"],
-  ["PUT /api/queen/:queen/llm", "partial"],
+  ["PUT /api/queen/:queen/llm", "implemented"],
   ["GET /api/queen/:queen/persona", "implemented"],
-  ["PUT /api/queen/:queen/persona", "partial"],
+  ["PUT /api/queen/:queen/persona", "implemented"],
   ["GET /api/queen/:queen/overview", "implemented"],
-  ["POST /api/queen/:queen/avatar", "partial"],
-  ["DELETE /api/queen/:queen/avatar", "partial"],
-  ["GET /api/queen/:queen/avatar", "partial"],
-  ["POST /api/queen/:queen/session", "partial"],
-  ["POST /api/queen/:queen/session/select", "partial"],
-  ["POST /api/queen/:queen/session/new", "partial"],
+  ["POST /api/queen/:queen/avatar", "implemented"],
+  ["DELETE /api/queen/:queen/avatar", "implemented"],
+  ["GET /api/queen/:queen/avatar", "implemented"],
+  ["POST /api/queen/:queen/session", "implemented"],
+  ["POST /api/queen/:queen/session/select", "implemented"],
+  ["POST /api/queen/:queen/session/new", "implemented"],
   ["GET /api/queen/:queen/tools", "implemented"],
-  ["PATCH /api/queen/:queen/tools", "partial"],
-  ["DELETE /api/queen/:queen/tools", "partial"],
+  ["PATCH /api/queen/:queen/tools", "implemented"],
+  ["DELETE /api/queen/:queen/tools", "implemented"],
   ["GET /api/queen/:queen/soul", "implemented"],
   ["PUT /api/queen/:queen/soul", "implemented"],
   ["POST /api/queen/:queen/soul/proposals/:proposal/decide", "implemented"],
@@ -257,8 +257,8 @@ test("registers exactly the 28 official routes with honest statuses", () => {
   }
 
   const counts = registry.counts();
-  assert.equal(counts.implemented, 11);
-  assert.equal(counts.partial, 17);
+  assert.equal(counts.implemented, 25);
+  assert.equal(counts.partial, 3);
   assert.equal(counts.missing, 0);
   assert.equal(counts.total, 28);
 
@@ -323,11 +323,19 @@ test("profiles describe the four real queen role identities and 404 unknown quee
   assert.match(missing.body.error, /not found/);
 
   const patch = await call(registry, "PATCH", "/api/queen/queen_tech/profile", {
-    body: { summary: "new identity" },
+    body: { summary: "new identity", skills: ["rust", "go"] },
   });
-  assert.equal(patch.status, 400);
-  assert.equal(patch.body.type, "unsupported");
-  assert.match(patch.body.error, /code-defined role identities/);
+  assert.equal(patch.status, 200);
+  assert.equal(patch.body.summary, "new identity");
+  assert.deepEqual(patch.body.skills, ["rust", "go"]);
+  assert.equal(patch.body.custom, false);
+
+  const reread = await call(registry, "GET", "/api/queen/queen_tech/profile");
+  assert.equal(reread.body.summary, "new identity");
+
+  const nothing = await call(registry, "PATCH", "/api/queen/queen_tech/profile", { body: {} });
+  assert.equal(nothing.status, 400);
+  assert.equal(nothing.body.type, "invalid_request");
 
   const badJson = await callStream(
     registry,
@@ -339,7 +347,7 @@ test("profiles describe the four real queen role identities and 404 unknown quee
   assert.equal(badJson.body.type, "invalid_request");
 });
 
-test("llm and persona read the real single model and role persona", async () => {
+test("llm and persona read the real model and persist per-queen overrides", async () => {
   seedWorld();
   const registry = makeRegistry();
 
@@ -350,11 +358,35 @@ test("llm and persona read the real single model and role persona", async () => 
   assert.equal(llm.body.default_model, modelConfig().modelId);
 
   const putLlm = await call(registry, "PUT", "/api/queen/queen_growth/llm", {
-    body: { section: { provider: "anthropic", model: "claude" } },
+    body: { section: { provider: "anthropic", model: "claude-x" } },
   });
-  assert.equal(putLlm.status, 400);
-  assert.equal(putLlm.body.type, "unsupported");
-  assert.match(putLlm.body.error, /one process-wide model/);
+  assert.equal(putLlm.status, 200);
+  assert.deepEqual(putLlm.body.section, { provider: "anthropic", model: "claude-x" });
+
+  const llmAgain = await call(registry, "GET", "/api/queen/queen_growth/llm");
+  assert.equal(llmAgain.body.section.model, "claude-x");
+
+  const session = await call(registry, "POST", "/api/queen/queen_growth/session/new", {
+    body: {},
+  });
+  assert.equal(session.status, 200);
+
+  const switched = await call(registry, "PUT", "/api/queen/queen_growth/llm", {
+    body: { section: { model: "other-model" } },
+  });
+  assert.equal(switched.body.sessions_switched, 1);
+
+  const cleared = await call(registry, "PUT", "/api/queen/queen_growth/llm", {
+    body: { section: null },
+  });
+  assert.equal(cleared.body.section, null);
+  const afterClear = await call(registry, "GET", "/api/queen/queen_growth/llm");
+  assert.equal(afterClear.body.section, null);
+  assert.equal(afterClear.body.default_model, modelConfig().modelId);
+
+  const missingKey = await call(registry, "PUT", "/api/queen/queen_growth/llm", { body: {} });
+  assert.equal(missingKey.status, 400);
+  assert.equal(missingKey.body.type, "invalid_request");
 
   const persona = await call(registry, "GET", "/api/queen/queen_finance/persona");
   assert.equal(persona.status, 200);
@@ -364,10 +396,35 @@ test("llm and persona read the real single model and role persona", async () => 
   assert.equal(persona.body.persona.title, "Head of Finance");
 
   const putPersona = await call(registry, "PUT", "/api/queen/queen_finance/persona", {
-    body: { persona: { name: "Money Queen" } },
+    body: {
+      persona: {
+        name: "Money Queen",
+        title: "CFO",
+        core_traits: "cold",
+        skills: ["modeling"],
+        behavior_triggers: [{ trigger: "miss", reaction: "audit" }],
+      },
+    },
   });
-  assert.equal(putPersona.status, 400);
-  assert.equal(putPersona.body.type, "unsupported");
+  assert.equal(putPersona.status, 200);
+  assert.equal(putPersona.body.persona.name, "Money Queen");
+  assert.equal(putPersona.body.persona.title, "CFO");
+
+  const reread = await call(registry, "GET", "/api/queen/queen_finance/persona");
+  assert.equal(reread.body.persona.core_traits, "cold");
+  assert.deepEqual(reread.body.persona.behavior_triggers, [{ trigger: "miss", reaction: "audit" }]);
+
+  const personaCleared = await call(registry, "PUT", "/api/queen/queen_finance/persona", {
+    body: { persona: null },
+  });
+  assert.equal(personaCleared.status, 200);
+  assert.equal(personaCleared.body.persona.name, "Finance Queen");
+  assert.match(personaCleared.body.persona.core_traits, /Finance Queen/);
+
+  const bad = await call(registry, "PUT", "/api/queen/queen_finance/persona", {
+    body: { persona: { behavior_triggers: "nope" } },
+  });
+  assert.equal(bad.status, 400);
 });
 
 test("overview counts real memory files and queen session files", async () => {
@@ -400,105 +457,179 @@ test("overview counts real memory files and queen session files", async () => {
 // Catalog membership
 // ---------------------------------------------------------------------------
 
-test("catalog mutations are explicit 4xx answers, never fake catalog writes", async () => {
+test("catalog create, remove, restore, and the removed list are real", async () => {
   seedWorld();
   const registry = makeRegistry();
 
   const create = await call(registry, "POST", "/api/queen/create", {
-    body: { name: "Growth Hacker", title: "Custom Queen" },
+    body: {
+      name: "Growth Hacker",
+      title: "Custom Queen",
+      persona: { name: "Growth Hacker", core_traits: "relentless" },
+    },
   });
-  assert.equal(create.status, 400);
-  assert.equal(create.body.type, "unsupported");
-  assert.match(create.body.error, /Custom queens are not supported/);
-  assert.deepEqual(create.body.supported, [
-    "queen_growth",
-    "queen_tech",
-    "queen_finance",
-    "queen_ops",
-  ]);
+  assert.equal(create.status, 200);
+  assert.equal(create.body.queen.custom, true);
+  assert.equal(create.body.queen.id, "queen_growth_hacker");
+  assert.equal(create.body.queen.name, "Growth Hacker");
+  assert.equal(create.body.queen.title, "Custom Queen");
+
+  const profile = await call(registry, "GET", "/api/queen/queen_growth_hacker/profile");
+  assert.equal(profile.status, 200);
+  assert.equal(profile.body.custom, true);
+  assert.equal(profile.body.title, "Custom Queen");
+
+  const persona = await call(registry, "GET", "/api/queen/queen_growth_hacker/persona");
+  assert.equal(persona.status, 200);
+  assert.equal(persona.body.persona.core_traits, "relentless");
+
+  const clash = await call(registry, "POST", "/api/queen/create", {
+    body: { name: "x", queen_id: "queen_tech" },
+  });
+  assert.equal(clash.status, 409);
+  assert.equal(clash.body.type, "conflict");
+
+  const noName = await call(registry, "POST", "/api/queen/create", { body: {} });
+  assert.equal(noName.status, 400);
+  assert.equal(noName.body.type, "invalid_request");
+
+  assert.deepEqual((await call(registry, "GET", "/api/queen/removed")).body, { queens: [] });
 
   const remove = await call(registry, "POST", "/api/queen/queen_growth/remove");
-  assert.equal(remove.status, 400);
-  assert.equal(remove.body.type, "unsupported");
-  assert.match(remove.body.error, /cannot be removed/);
+  assert.equal(remove.status, 200);
+  assert.deepEqual(remove.body, { queen_id: "queen_growth", removed: true });
+
+  const hidden = await call(registry, "GET", "/api/queen/queen_growth/profile");
+  assert.equal(hidden.status, 404);
+
+  const listed = await call(registry, "GET", "/api/queen/removed");
+  assert.deepEqual(listed.body.queens.map((queen) => queen.id), ["queen_growth"]);
+
+  const restore = await call(registry, "POST", "/api/queen/queen_growth/restore");
+  assert.equal(restore.status, 200);
+  assert.deepEqual(restore.body, { queen_id: "queen_growth", removed: false });
+  assert.equal((await call(registry, "GET", "/api/queen/queen_growth/profile")).status, 200);
+
+  const restoreAgain = await call(registry, "POST", "/api/queen/queen_growth/restore");
+  assert.equal(restoreAgain.status, 400);
+  assert.match(restoreAgain.body.error, /never removed/);
 
   const removeMissing = await call(registry, "POST", "/api/queen/queen_nope/remove");
   assert.equal(removeMissing.status, 404);
-
-  const restore = await call(registry, "POST", "/api/queen/queen_growth/restore");
-  assert.equal(restore.status, 400);
-  assert.equal(restore.body.type, "unsupported");
-  assert.match(restore.body.error, /never removed/);
-
-  const removed = await call(registry, "GET", "/api/queen/removed");
-  assert.equal(removed.status, 200);
-  assert.deepEqual(removed.body, { queens: [] });
 });
 
 // ---------------------------------------------------------------------------
 // Avatars and sessions
 // ---------------------------------------------------------------------------
 
-test("avatar routes answer 400/404 with the missing store named", async () => {
+test("avatar upload, read, and delete round-trip real bytes", async () => {
   seedWorld();
   const registry = makeRegistry();
 
-  const post = await call(registry, "POST", "/api/queen/queen_tech/avatar", {
-    body: { avatar: "not-a-file" },
-  });
-  assert.equal(post.status, 400);
-  assert.equal(post.body.type, "unsupported");
-  assert.match(post.body.error, /no queen avatar file store/);
+  const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const boundary = "pihiveboundary";
+  const wrap = (fieldName) =>
+    Buffer.concat([
+      Buffer.from(
+        `--${boundary}\r\ncontent-disposition: form-data; name="${fieldName}"; filename="q.png"\r\ncontent-type: image/png\r\n\r\n`,
+      ),
+      bytes,
+      Buffer.from(`\r\n--${boundary}--\r\n`),
+    ]);
+  const headers = { "content-type": `multipart/form-data; boundary=${boundary}` };
 
-  const del = await call(registry, "DELETE", "/api/queen/queen_tech/avatar");
-  assert.equal(del.status, 400);
-  assert.equal(del.body.type, "unsupported");
+  const post = await call(registry, "POST", "/api/queen/queen_tech/avatar", {
+    body: wrap("avatar"),
+    headers,
+  });
+  assert.equal(post.status, 200);
+  assert.equal(post.body.avatar_url, "/api/queen/queen_tech/avatar");
+  assert.equal(post.body.size, bytes.length);
+
+  const profile = await call(registry, "GET", "/api/queen/queen_tech/profile");
+  assert.equal(profile.body.has_avatar, true);
+  assert.equal(profile.body.portrait, "/api/queen/queen_tech/avatar");
 
   const get = await call(registry, "GET", "/api/queen/queen_tech/avatar");
-  assert.equal(get.status, 404);
-  assert.match(get.body.error, /No avatar found/);
+  assert.equal(get.status, 200);
+  assert.equal(get.content_type, "image/png");
+  assert.deepEqual(Buffer.from(get.body), bytes);
+
+  const wrongField = await call(registry, "POST", "/api/queen/queen_growth/avatar", {
+    body: wrap("file"),
+    headers,
+  });
+  assert.equal(wrongField.status, 400);
+  assert.equal(wrongField.body.type, "invalid_request");
+
+  const del = await call(registry, "DELETE", "/api/queen/queen_tech/avatar");
+  assert.equal(del.status, 200);
+  assert.deepEqual(del.body, { queen_id: "queen_tech", has_avatar: false });
+
+  const gone = await call(registry, "GET", "/api/queen/queen_tech/avatar");
+  assert.equal(gone.status, 404);
+  assert.match(gone.body.error, /no avatar/);
 
   const missing = await call(registry, "GET", "/api/queen/queen_nope/avatar");
   assert.equal(missing.status, 404);
   assert.match(missing.body.error, /Queen 'queen_nope' not found/);
 });
 
-test("queen session routes are explicit unsupported and validate session_id first", async () => {
+test("queen DM sessions are durable: create, resume, select, and new", async () => {
   seedWorld();
   const registry = makeRegistry();
 
-  const getOrCreate = await call(registry, "POST", "/api/queen/queen_tech/session", {
+  const created = await call(registry, "POST", "/api/queen/queen_tech/session", {
     body: { initial_prompt: "hello" },
   });
-  assert.equal(getOrCreate.status, 400);
-  assert.equal(getOrCreate.body.type, "unsupported");
-  assert.match(getOrCreate.body.error, /colony/);
+  assert.equal(created.status, 200);
+  assert.equal(created.body.queen_id, "queen_tech");
+  assert.equal(created.body.status, "created");
+  assert.ok(created.body.session_id);
 
-  const selectMissing = await call(registry, "POST", "/api/queen/queen_tech/session/select", {
+  const again = await call(registry, "POST", "/api/queen/queen_tech/session", { body: {} });
+  assert.equal(again.status, 200);
+  assert.equal(again.body.session_id, created.body.session_id);
+  assert.equal(again.body.status, "live");
+
+  const fresh = await call(registry, "POST", "/api/queen/queen_growth/session/new", {
+    body: { initial_prompt: "start", crm_setup: true },
+  });
+  assert.equal(fresh.status, 200);
+  assert.equal(fresh.body.status, "created");
+  assert.notEqual(fresh.body.session_id, created.body.session_id);
+
+  const selectNothing = await call(registry, "POST", "/api/queen/queen_tech/session/select", {
     body: {},
   });
-  assert.equal(selectMissing.status, 400);
-  assert.equal(selectMissing.body.type, "invalid_request");
-  assert.match(selectMissing.body.error, /session_id is required/);
+  assert.equal(selectNothing.status, 400);
+  assert.equal(selectNothing.body.type, "invalid_request");
+  assert.match(selectNothing.body.error, /session_id is required/);
 
-  const select = await call(registry, "POST", "/api/queen/queen_tech/session/select", {
+  const selectUnknown = await call(registry, "POST", "/api/queen/queen_tech/session/select", {
     body: { session_id: "session_20260101_000000_dead" },
   });
-  assert.equal(select.status, 400);
-  assert.equal(select.body.type, "unsupported");
+  assert.equal(selectUnknown.status, 404);
 
-  const fresh = await call(registry, "POST", "/api/queen/queen_tech/session/new", {
-    body: { initial_prompt: "start" },
+  const crossQueen = await call(registry, "POST", "/api/queen/queen_tech/session/select", {
+    body: { session_id: fresh.body.session_id },
   });
-  assert.equal(fresh.status, 400);
-  assert.equal(fresh.body.type, "unsupported");
+  assert.equal(crossQueen.status, 409);
+  assert.equal(crossQueen.body.type, "conflict");
+
+  const select = await call(registry, "POST", "/api/queen/queen_tech/session/select", {
+    body: { session_id: created.body.session_id },
+  });
+  assert.equal(select.status, 200);
+  assert.equal(select.body.status, "resumed");
+  assert.equal(select.body.session_id, created.body.session_id);
 });
 
 // ---------------------------------------------------------------------------
 // Tools
 // ---------------------------------------------------------------------------
 
-test("tools expose the real QueenRuntime catalog and reject per-queen edits", async () => {
+test("tools expose the real catalog and per-queen allowlist round-trips", async () => {
   seedWorld();
   const registry = makeRegistry();
 
@@ -547,15 +678,28 @@ test("tools expose the real QueenRuntime catalog and reject per-queen edits", as
   }
 
   const patch = await call(registry, "PATCH", "/api/queen/queen_tech/tools", {
-    body: { enabled_mcp_tools: [] },
+    body: { enabled_mcp_tools: ["tracker_query", "task_create"] },
   });
-  assert.equal(patch.status, 400);
-  assert.equal(patch.body.type, "unsupported");
-  assert.match(patch.body.error, /no per-queen tools\.json/);
+  assert.equal(patch.status, 200);
+  assert.deepEqual(patch.body.enabled_mcp_tools, ["tracker_query", "task_create"]);
+  assert.equal(patch.body.is_role_default, false);
+  assert.equal(typeof patch.body.refreshed_sessions, "number");
+
+  const reread = await call(registry, "GET", "/api/queen/queen_tech/tools");
+  assert.deepEqual(reread.body.enabled_mcp_tools, ["tracker_query", "task_create"]);
+  assert.equal(reread.body.categories.some((category) => category.in_role_default === false), true);
+
+  const bad = await call(registry, "PATCH", "/api/queen/queen_tech/tools", {
+    body: { enabled_mcp_tools: "nope" },
+  });
+  assert.equal(bad.status, 400);
+  assert.equal(bad.body.type, "invalid_request");
 
   const reset = await call(registry, "DELETE", "/api/queen/queen_tech/tools");
-  assert.equal(reset.status, 400);
-  assert.equal(reset.body.type, "unsupported");
+  assert.equal(reset.status, 200);
+  assert.equal(reset.body.removed, true);
+  assert.equal(reset.body.is_role_default, true);
+  assert.equal(reset.body.enabled_mcp_tools, null);
 });
 
 // ---------------------------------------------------------------------------

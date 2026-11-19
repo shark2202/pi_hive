@@ -347,6 +347,14 @@ export class PiHiveServer {
       });
       if (res.headersSent) return;
       if (result && typeof result.status === "number" && result.body !== undefined) {
+        if (result.content_type || Buffer.isBuffer(result.body)) {
+          // Raw-body routes (queen avatars): the handler owns the content type.
+          res.writeHead(result.status, {
+            "content-type": result.content_type || "application/octet-stream",
+            ...(result.headers || {}),
+          });
+          return res.end(result.body);
+        }
         return json(res, result.status, result.body);
       }
     }
