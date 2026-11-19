@@ -42,7 +42,7 @@ async function readBody(req) {
 }
 
 const UI_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "ui");
-export const DEFAULT_FRONTEND_DIST = "/Users/mac/hive/core/frontend/dist";
+export const DEFAULT_FRONTEND_DIST = path.resolve(import.meta.dirname, "../frontend/dist");
 const MIME = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
@@ -144,7 +144,7 @@ function serveFile(req, res, file, cacheControl) {
 }
 
 function frontendUnavailable(req, res, pathname, dist) {
-  const message = `Hive frontend build not found at ${dist}. Build core/frontend or set HIVE_FRONTEND_DIST.`;
+  const message = `Hive frontend build not found at ${dist}. Run "npm run ui:build" or set HIVE_FRONTEND_DIST.`;
   const wantsJson =
     pathname.startsWith("/assets/") ||
     pathname.startsWith("/logos/") ||
@@ -158,7 +158,7 @@ function frontendUnavailable(req, res, pathname, dist) {
 <body style="font-family: system-ui, sans-serif; max-width: 42rem; margin: 4rem auto; line-height: 1.5">
 <h1>Hive frontend build not found</h1>
 <p>Expected the official frontend at <code>${dist.replaceAll("&", "&amp;").replaceAll("<", "&lt;")}</code>.</p>
-<p>Build <code>core/frontend</code> or start the server with <code>HIVE_FRONTEND_DIST=/path/to/dist</code>.</p>
+<p>Run <code>npm run ui:install &amp;&amp; npm run ui:build</code> or start the server with <code>HIVE_FRONTEND_DIST=/path/to/dist</code>.</p>
 </body></html>`;
   res.writeHead(503, {
     "content-type": "text/html; charset=utf-8",

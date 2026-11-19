@@ -120,7 +120,7 @@
 | HTTP API | 🟡 | 171 official routes: 107 implemented + 64 partial + 0 missing; partials are explicit unsupported/limited responses |
 | SSE | ✅ | Per-session events replay + tail from the durable `events.jsonl`; chat deltas + colony events |
 | CLI | 🟡 | serve/colony/chat/worker/playbook/tracker; no skill/mcp/janitor |
-| Official Hive frontend | 🟡 | Served unchanged at `/`; desktop chat verified end-to-end (Queen reply over SSE); mobile official layout is desktop-first and squeezed |
+| Official Hive frontend (forked at `frontend/`, built here) | ✅ | Fork source + dist live in this repo; served at `/`; desktop chat verified end-to-end (Queen reply over SSE, last verified 2026-11-19 — not re-run: no model key in this environment); mobile official layout is desktop-first and squeezed |
 | Web dashboard | 🟡 | Native `/ui/`: colonies, chat (SSE), workers, tracker, playbooks, triggers, inbox, Soul; not Hive UI parity |
 | API auth | ⬜ | Local-only; no auth |
 | Import/export | ⬜ | No tar import/export |

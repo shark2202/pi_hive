@@ -30,7 +30,7 @@ pi_hive                        → Colony / Queen / Worker / Tracker / Plan /
 
 - **不要重写 agent loop。** `Agent`、工具执行、流式事件、对话轮次由 pi-agent-core 提供。
 - **不要修改 Python Hive**：`/Users/mac/hive/core` 是参考实现和官方前端来源，只读。
-- **不要修改官方前端构建**：`/Users/mac/hive/core/frontend/dist` 原样服务在 `/`。
+- **前端独立维护**：官方前端已 fork 到仓库内 `frontend/`，产物 `frontend/dist` 服务在 `/`；`/Users/mac/hive/core/frontend` 只作只读参照来源。
 - 官方前端是固定客户端；要让它工作，应补 `/api` 兼容层，而不是改 `dist`。
 - 原生 dashboard 在 `/ui/`，是 `src/ui` 的 vanilla JS，不是官方 UI 的替代品。
 - `go_hive` 是另一个独立 Go 工程；不要把两边的状态混在一起。
@@ -165,7 +165,8 @@ export PI_HIVE_QUEEN_TURNS=40
 export PI_HIVE_WORKER_TURNS=10
 export PI_HIVE_MAX_WORKERS=4
 export PI_HIVE_IDLE_SECONDS=120
-export HIVE_FRONTEND_DIST=/Users/mac/hive/core/frontend/dist
+# é»è®¤å·²æåä»åºå frontend/distï¼ä»å¨éè¦å¤é¨äº§ç©æ¶è¦ç
+export HIVE_FRONTEND_DIST=$PWD/frontend/dist
 ```
 
 密钥只从环境变量读取；**不要写进 `handoff.md`、日志、提交或截图**。
@@ -210,7 +211,7 @@ node src/cli.js serve
 如果 `/` 没有官方前端，检查 `HIVE_FRONTEND_DIST` 是否存在；先确认：
 
 ```bash
-test -f /Users/mac/hive/core/frontend/dist/index.html && echo dist-ok
+test -f frontend/dist/index.html && echo dist-ok
 ```
 
 ---
@@ -522,7 +523,7 @@ Queen → spawn_worker → worker → tracker_upsert
 
 - 不要在未明确要求时 `commit` / `push`。
 - 不要把密钥、`.tmp-home`、真实 colony 数据提交。
-- 不要修改 `/Users/mac/hive/core` 或官方 `dist`。
+- 不要修改 `/Users/mac/hive/core`；官方前端已 fork 到 `frontend/` 独立维护。
 - 不要重写 pi-agent-core 的 loop。
 - 不要用 501 或假成功清契约；partial 就标 partial。
 - 不要用 `npm ci` 破坏当前 symlink 依赖。

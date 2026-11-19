@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const contractPath = path.join(root, "program", "contracts", "hive-api.json");
-const dist = process.env.HIVE_FRONTEND_DIST || "/Users/mac/hive/core/frontend/dist";
+const dist = process.env.HIVE_FRONTEND_DIST || path.resolve(import.meta.dirname, "../../frontend/dist");
 const base = process.env.PI_HIVE_BASE || "";
 const failures = [];
 const warnings = [];
