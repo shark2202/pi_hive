@@ -50,6 +50,8 @@ export class TriggerManager {
     this.timer = null;
     this.path = colonyPaths(colony).triggers;
     this.triggers = this.#load();
+    /** Filled by start(): the missed fires this process reconciled. */
+    this.missedFires = [];
   }
 
   #load() {
@@ -116,10 +118,59 @@ export class TriggerManager {
     return trigger;
   }
 
-  start() {
+  /**
+   * Fires that were missed while the process was down.
+   *
+   * A trigger that was due N intervals ago fires **once** with
+   * `{missed: true, missed_intervals: N}` — replaying every missed slot would
+   * turn a long stop into a burst of runs. A trigger that has never fired is
+   * armed from now instead of being treated as infinitely overdue.
+   *
+   * @returns {Array<{name: string, missed_intervals: number, last_fired_at: string|null}>}
+   */
+  reconcileMissed(now = new Date()) {
+    const missed = [];
+    for (const trigger of this.triggers) {
+      if (!trigger.enabled) continue;
+      if (!trigger.last_fired_at) {
+        trigger.last_fired_at = now.toISOString();
+        continue;
+      }
+      const last = new Date(trigger.last_fired_at).getTime();
+      if (!Number.isFinite(last)) continue;
+      let intervals = 0;
+      if (trigger.type === "interval") {
+        const size = Number(trigger.interval_minutes) * 60000;
+        if (size > 0) intervals = Math.floor((now.getTime() - last) / size);
+      } else if (trigger.type === "cron") {
+        // A cron trigger missed a slot when the last fire is older than the
+        // grace window; how many slots is not meaningful without a cron parser,
+        // so the count stays 1 and the payload says so.
+        intervals = now.getTime() - last >= 120000 ? 1 : 0;
+      }
+      if (intervals >= 1) {
+        missed.push({ name: trigger.name, missed_intervals: intervals, last_fired_at: trigger.last_fired_at });
+      }
+    }
+    if (missed.length) this.#save();
+    return missed;
+  }
+
+  start(now = new Date()) {
     if (this.timer) return;
-    const now = new Date().toISOString();
-    for (const t of this.triggers) if (!t.last_fired_at) t.last_fired_at = now;
+    // Reconcile before arming, so a stop shorter than one interval is a no-op
+    // and a long stop produces exactly one run per trigger.
+    this.missedFires = this.reconcileMissed(now);
+    for (const missed of this.missedFires) {
+      this.fire(missed.name, { at: now.toISOString(), missed: true, missed_intervals: missed.missed_intervals });
+    }
+    // The logical clock, not the wall clock: a reconciled fire counts as this
+    // start's slot, so an immediate restart does not fire it again.
+    for (const t of this.triggers) {
+      if (!t.last_fired_at || this.missedFires.some((entry) => entry.name === t.name)) {
+        t.last_fired_at = now.toISOString();
+      }
+    }
     this.#save();
     this.timer = setInterval(() => {
       const now = new Date();

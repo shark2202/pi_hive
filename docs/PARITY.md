@@ -35,7 +35,7 @@
 | Goal & Outcome judge | ✅ | `colonies/<name>/goal.json` keeps the objective, success criteria (each with an `observable` check) and constraints; `judgeGoal` records accept/retry/escalate per attempt and escalates when `budget.max_attempts` runs out |
 | Stall / doom-loop guard | ✅ | `loop-guard.json` keeps a 12-turn window: 4 identical actions or 3 empty turns park the loop with a reason; `clearPark` resets the window |
 | Colony list | ✅ | `GET /api/colonies`, CLI |
-| Colony import/export | ⬜ | tar import/export not implemented |
+| Colony import/export | ✅ | `src/domain/archive.js` packs a colony into a real gzipped ustar tar (sockets/locks excluded) and restores it with `--name`/`--overwrite`; CLI: `pi-hive export <colony> <file>`, `pi-hive import <file>`. Member paths that are absolute or contain `..` are refused before anything is written |
 | Global team data | ✅ | `/api/global/data/*` runs against `hiveHome()/global-data/team.db`: schema-driven tables/rows, insert (minted pk, `409` on duplicate), pk-addressed update/delete, filter/search/sort, group counts, inferred foreign keys and a `_global_changes` feed. Local file, not Hive's cloud team DB — no cross-machine sync |
 | Queen identity / persona | 🟡 | 4 built-in personas; no full 13/Org Chart |
 | Queen profile editing | ✅ | PATCH profile, PUT persona, PUT llm, tools allowlist, avatar upload/read/delete persist per queen under `hiveHome()/queens/<id>`; edits re-bind her live sessions |
@@ -93,7 +93,7 @@
 | Interval trigger | ✅ | `triggers.json` + ticker |
 | Cron trigger | 🟡 | 5-field parser; UTC; basic ranges/steps/lists |
 | Webhook trigger | 🟡 | `POST .../triggers/:name/webhook`; no signature verification |
-| Trigger autostart | 🟡 | Starts when colony runtime is created; no global daemon |
+| Trigger autostart | ✅ | `TriggerManager.start()` reconciles missed fires first: one run per overdue trigger with `{missed:true, missed_intervals:N}` (bounded, never a burst), disabled triggers skipped, a never-fired trigger armed from now. No global daemon (per-colony start, unchanged) |
 | Missed-trigger reporting | ⬜ | No catch-up; last fire is not reconciled across downtime |
 | Sentinel transports | ✅ | Telegram `getMe`/`getUpdates` and Slack `auth.test` are real calls; delivery still goes to the local inbox because no sender is wired |
 | Queen 24/7 | 🟡 | Server must stay alive; no supervisor/daemon |
@@ -130,7 +130,7 @@
 | Official Hive frontend (forked at `frontend/`, built here) | ✅ | Fork source + dist live in this repo; served at `/`; desktop chat verified end-to-end (Queen reply over SSE, last verified 2026-11-19 — not re-run: no model key in this environment); mobile official layout is desktop-first and squeezed |
 | Web dashboard | 🟡 | Native `/ui/`: colonies, chat (SSE), workers, tracker, playbooks, triggers, inbox, Soul; not Hive UI parity |
 | API auth | ⬜ | Local-only; no auth |
-| Import/export | ⬜ | No tar import/export |
+| Import/export | ✅ | `pi-hive export` / `pi-hive import` over the tar.gz archive above |
 | Portability | ✅ | macOS + Linux (`node:24-alpine` in Docker): 239/239 tests, server boots and serves `/` + `/ui/` from the repo's own `frontend/dist`; no tracked symlinks, no absolute host paths, `package-lock.json` committed. Windows is code-level only (no runner) — see `program/reports/cross-platform.md` |
 | Janitor/retention | ⬜ | No retention policy |
 

@@ -1,5 +1,9 @@
 #!/usr/bin/env node
+import fs from "node:fs";
+import path from "node:path";
+
 import { PI_HIVE_VERSION, serverConfig } from "./config.js";
+import { exportColonyToFile, importColony } from "./domain/archive.js";
 import { createColony, listColonies, loadMetadata } from "./domain/colony.js";
 import { openTracker } from "./domain/tracker.js";
 import { createModelRuntime } from "./kernel/model.js";
@@ -21,6 +25,8 @@ Usage:
   pi-hive playbook run <colony> <name>
   pi-hive tracker <colony> [sql]
   pi-hive trigger list <colony>
+  pi-hive export <colony> <file.tar.gz>
+  pi-hive import <file.tar.gz> [--name <colony>] [--overwrite]
 `);
 }
 
@@ -134,6 +140,27 @@ async function main() {
     } finally {
       tracker.close();
     }
+    return;
+  }
+
+  if (cmd === "export") {
+    const colony = process.argv[3];
+    const file = process.argv[4];
+    if (!colony || !file) return usage();
+    const result = exportColonyToFile(colony, file);
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  if (cmd === "import") {
+    const file = process.argv[3];
+    if (!file) return usage();
+    const archive = fs.readFileSync(path.resolve(file));
+    const result = importColony(archive, {
+      name: arg("name"),
+      overwrite: process.argv.includes("--overwrite"),
+    });
+    console.log(JSON.stringify(result, null, 2));
     return;
   }
 
