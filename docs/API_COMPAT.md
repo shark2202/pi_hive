@@ -140,8 +140,8 @@ _pi_hive:_ 4 implemented, 2 partial. GET/PUT soul, proposal decide and rollback 
 | PUT | `/queen/:queen/soul` | queens (`queens.ts:278`) | inline {sections: Record<string, SoulItem[]>} | QueenSoul | — | implemented |
 | POST | `/queen/:queen/soul/proposals/:proposal/decide` | queens (`queens.ts:282`) | inline {accept: number[]\|null} | QueenSoul | — | implemented |
 | POST | `/queen/:queen/soul/rollback` | queens (`queens.ts:286`) | inline {version} | QueenSoul | — | implemented |
-| POST | `/queen/:queen/soul/proposals/:proposal/probe` | queens (`queens.ts:290`) | — | {started} | — | partial |
-| POST | `/queen/:queen/soul/reflect` | queens (`queens.ts:294`) | inline {bootstrap} | {started} | — | partial |
+| POST | `/queen/:queen/soul/proposals/:proposal/probe` | queens (`queens.ts:290`) | — | {started} | — | implemented |
+| POST | `/queen/:queen/soul/reflect` | queens (`queens.ts:294`) | inline {bootstrap} | {started} | — | implemented |
 
 ## MCP servers (7)
 

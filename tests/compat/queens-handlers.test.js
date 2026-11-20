@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { RouteRegistry } from "../../src/compat/router.js";
+import { listProposals } from "../../src/domain/soul.js";
 import { colonyDir, coloniesDir, modelConfig } from "../../src/config.js";
 import { createColony } from "../../src/domain/colony.js";
 import { QUEEN_ROUTE_PATHS, registerQueenRoutes } from "../../src/compat/handlers/queens.js";
@@ -32,6 +33,8 @@ function makeRegistry() {
 }
 
 /** Invoke a registered handler with a fake req/res and assert no socket write. */
+const readProposals = (colony) => listProposals(colony);
+
 async function call(registry, method, pathname, { body, ctx, headers } = {}) {
   const match = registry.match(method, pathname);
   assert.ok(match, `no route for ${method} ${pathname}`);
@@ -234,8 +237,8 @@ const EXPECTED_STATUS = new Map([
   ["PUT /api/queen/:queen/soul", "implemented"],
   ["POST /api/queen/:queen/soul/proposals/:proposal/decide", "implemented"],
   ["POST /api/queen/:queen/soul/rollback", "implemented"],
-  ["POST /api/queen/:queen/soul/proposals/:proposal/probe", "partial"],
-  ["POST /api/queen/:queen/soul/reflect", "partial"],
+  ["POST /api/queen/:queen/soul/proposals/:proposal/probe", "implemented"],
+  ["POST /api/queen/:queen/soul/reflect", "implemented"],
   ["GET /api/claude-code-queens", "implemented"],
   ["GET /api/claude-code-queens/:queen/conversations/:conversation", "partial"],
 ]);
@@ -257,8 +260,8 @@ test("registers exactly the 28 official routes with honest statuses", () => {
   }
 
   const counts = registry.counts();
-  assert.equal(counts.implemented, 25);
-  assert.equal(counts.partial, 3);
+  assert.equal(counts.implemented, 27);
+  assert.equal(counts.partial, 1);
   assert.equal(counts.missing, 0);
   assert.equal(counts.total, 28);
 
@@ -972,7 +975,7 @@ test("soul rollback restores a snapshotted version as a new version", async () =
   assert.equal(bad.body.type, "invalid_request");
 });
 
-test("soul probe and reflect are explicit unsupported answers with real preconditions", async () => {
+test("soul probe and reflect start real background work with honest results", async () => {
   const home = seedWorld();
   const registry = makeRegistry();
 
@@ -981,9 +984,19 @@ test("soul probe and reflect are explicit unsupported answers with real precondi
     "POST",
     "/api/queen/queen_tech/soul/proposals/soul_p1/probe",
   );
-  assert.equal(probe.status, 400);
-  assert.equal(probe.body.type, "unsupported");
-  assert.match(probe.body.error, /no probe-question store/);
+  assert.equal(probe.status, 200);
+  assert.equal(probe.body.started, true);
+  assert.equal(probe.body.proposal_id, "soul_p1");
+
+  // The background job records either the question or why it could not ask one.
+  let probing = null;
+  for (let i = 0; i < 50 && !probing; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    probing = readProposals("tech-one").find((entry) => entry.kind === "probe" && entry.probe_of === "soul_p1");
+  }
+  assert.ok(probing, "the probe must leave a record");
+  assert.equal(probing.status, "probing");
+  assert.ok(probing.question || /no model runtime/.test(probing.error || ""));
 
   const probeMissing = await call(
     registry,
@@ -996,13 +1009,21 @@ test("soul probe and reflect are explicit unsupported answers with real precondi
   assert.equal(reflectBlocked.status, 409);
   assert.match(reflectBlocked.body.error, /Decide on the waiting proposal first/);
 
-  // Remove the pending proposals; reflection is then an unsupported capability,
-  // not a fake "started" answer.
+  // With the queue empty, reflection starts and records an outcome either way.
   fs.writeFileSync(path.join(colonyDir("tech-one"), "soul_proposals.jsonl"), "");
-  const reflect = await call(registry, "POST", "/api/queen/queen_tech/soul/reflect");
-  assert.equal(reflect.status, 400);
-  assert.equal(reflect.body.type, "unsupported");
-  assert.match(reflect.body.error, /soul\/review/);
+  const reflect = await call(registry, "POST", "/api/queen/queen_tech/soul/reflect", {
+    body: { bootstrap: true },
+  });
+  assert.equal(reflect.status, 200);
+  assert.equal(reflect.body.started, true);
+  assert.equal(reflect.body.bootstrap, true);
+
+  let reflection = null;
+  for (let i = 0; i < 50 && !reflection; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    reflection = readProposals("tech-one").find((entry) => entry.kind === "reflection");
+  }
+  assert.ok(reflection, "reflection must leave a record");
   assert.ok(home);
 
   const badAccept = await call(registry, "PUT", "/api/queen/queen_tech/soul", {
@@ -1015,6 +1036,49 @@ test("soul probe and reflect are explicit unsupported answers with real precondi
 // ---------------------------------------------------------------------------
 // Claude Code queens
 // ---------------------------------------------------------------------------
+
+test("soul probe asks the model when a runtime is reachable, and reflect stores its proposals", async () => {
+  seedWorld();
+  const registry = makeRegistry();
+  const stubRuntime = {
+    model: { id: "stub", provider: "pihive" },
+    async *streamFn({ messages }) {
+      const prompt = String(messages.at(-1).content);
+      if (prompt.includes("Proposed section")) yield { delta: '{"question":"When did you last do this?"}' };
+      else yield { delta: '{"proposals":[{"section":"identity.principles","change":"Check the log first","evidence":["run 12"]}]}' };
+    },
+  };
+
+  const probe = await call(registry, "POST", "/api/queen/queen_tech/soul/proposals/soul_p1/probe", {
+    ctx: { modelRuntime: stubRuntime },
+  });
+  assert.equal(probe.body.started, true);
+
+  let question = null;
+  for (let i = 0; i < 50 && !question; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    question = readProposals("tech-one").find((entry) => entry.kind === "probe")?.question || null;
+  }
+  assert.equal(question, "When did you last do this?");
+
+  fs.writeFileSync(path.join(colonyDir("tech-one"), "soul_proposals.jsonl"), "");
+  const reflect = await call(registry, "POST", "/api/queen/queen_tech/soul/reflect", {
+    ctx: { modelRuntime: stubRuntime },
+    body: { bootstrap: false },
+  });
+  assert.equal(reflect.body.started, true);
+
+  let proposal = null;
+  for (let i = 0; i < 50 && !proposal; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    proposal = readProposals("tech-one").find((entry) => entry.status === "pending");
+  }
+  assert.ok(proposal, "a model reflection must append a pending proposal");
+  assert.equal(proposal.section, "identity.principles");
+  assert.equal(proposal.change, "Check the log first");
+  assert.deepEqual(proposal.evidence, ["run 12"]);
+  assert.equal(proposal.source, "reflect");
+});
 
 test("Claude Code queens are a valid empty list and transcripts an explicit 404", async () => {
   seedWorld();

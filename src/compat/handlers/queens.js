@@ -31,6 +31,7 @@ import path from "node:path";
 
 import { colonyDir, coloniesDir, hiveHome, modelConfig } from "../../config.js";
 import {
+  appendProposal,
   applyProposal,
   listProposals,
   loadSoul,
@@ -1553,7 +1554,55 @@ const rollbackSoul = async ({ params, req }) => {
   return { status: 200, body: buildQueenSoulView(queenId, colony.name, saved) };
 };
 
-const probeSoulProposal = async ({ params }) => {
+/**
+ * Run one non-streaming model turn and return its text. Returns `null` when no
+ * runtime is reachable, so callers can record "no model" instead of pretending.
+ */
+async function soulModelText(ctx, prompt, maxTokens = 900) {
+  let runtime = null;
+  try {
+    runtime = ctx?.modelRuntime ?? ctx?.server?.modelRuntime ?? null;
+  } catch {
+    return null;
+  }
+  if (!runtime?.streamFn) return null;
+  try {
+    let text = "";
+    for await (const chunk of runtime.streamFn({
+      messages: [{ role: "user", content: prompt }],
+      model: runtime.model,
+      maxTokens,
+    })) {
+      if (typeof chunk?.delta === "string") text += chunk.delta;
+      else if (typeof chunk?.text === "string") text += chunk.text;
+    }
+    return text.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/** JSON object out of a model answer, tolerating a fenced block or prose around it. */
+function parseModelJson(raw) {
+  if (!raw) return null;
+  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+  const candidate = (fenced ? fenced[1] : raw).trim();
+  const start = candidate.indexOf("{");
+  const end = candidate.lastIndexOf("}");
+  if (start === -1 || end <= start) return null;
+  try {
+    return JSON.parse(candidate.slice(start, end + 1));
+  } catch {
+    return null;
+  }
+}
+
+/** Probe questions are recorded next to the proposal so the UI can show them. */
+function rememberProbe(colony, proposalId, patch) {
+  appendProposal(colony, { ...patch, status: "probing", probe_of: proposalId });
+}
+
+const probeSoulProposal = async ({ params, ctx } = {}) => {
   const resolved = resolveQueenSoul(params);
   if (resolved.error) return resolved.error;
   const { queenId, colony } = resolved;
@@ -1569,14 +1618,32 @@ const probeSoulProposal = async ({ params }) => {
       queen_id: queenId,
     });
   }
-  return unsupported(
-    queenId,
-    "Soul probes are not supported: pi_hive has no probe-question store and the compatibility layer does not call a model",
-    { colony_id: colony.name },
-  );
+
+  const prompt = [
+    "You are testing an identity-change proposal by asking the owner one question.",
+    `Current mission: ${soul.identity?.mission || "(none)"}`,
+    `Proposed section: ${proposal.section}`,
+    `Proposed change: ${proposal.change}`,
+    "Write one short question whose answer would show whether this change is true in practice.",
+    'Answer with JSON only: {"question": "..."}',
+  ].join("\n");
+
+  // The official route only starts work in the background, so answer immediately.
+  void (async () => {
+    const answer = await soulModelText(ctx, prompt, 300);
+    const question = parseModelJson(answer)?.question || (answer ? answer.split("\n")[0].slice(0, 400) : null);
+    rememberProbe(colony.name, proposalId, {
+      kind: "probe",
+      question,
+      asked_at: new Date().toISOString(),
+      ...(question ? {} : { error: "no model runtime was reachable, so no question could be asked" }),
+    });
+  })();
+
+  return { status: 200, body: { started: true, queen_id: queenId, proposal_id: proposalId, colony_id: colony.name } };
 };
 
-const reflectSoul = async ({ params }) => {
+const reflectSoul = async ({ params, req, ctx } = {}) => {
   const resolved = resolveQueenSoul(params);
   if (resolved.error) return resolved.error;
   const { queenId, colony } = resolved;
@@ -1584,14 +1651,52 @@ const reflectSoul = async ({ params }) => {
   if (soul.mode === "off") {
     return conflict(`The soul is disabled for colony '${colony.name}'`, { queen_id: queenId });
   }
-  if (listProposals(colony.name).some((proposal) => proposal.status === "pending")) {
+  if (listProposals(colony.name).some((entry) => entry.status === "pending")) {
     return conflict("Decide on the waiting proposal first", { queen_id: queenId });
   }
-  return unsupported(
-    queenId,
-    `Soul reflection needs the model runtime; run POST /api/colonies/${colony.name}/soul/review (native pi_hive) and decide the resulting proposals here`,
-    { colony_id: colony.name },
-  );
+  const parsedBody = await readJsonBody(req);
+  const bootstrap = parsedBody.ok ? parsedBody.body?.bootstrap === true : false;
+
+  const evidence = (soul.history || []).slice(-10).map((entry) => `${entry.section}: ${entry.change}`);
+  const prompt = [
+    bootstrap ? "Draft the first identity for this colony from what is known." : "Reflect on this colony's identity and propose at most two changes.",
+    `Mission: ${soul.identity?.mission || "(none)"}`,
+    `Principles: ${(soul.identity?.principles || []).join("; ") || "(none)"}`,
+    `Recent accepted changes: ${evidence.join(" | ") || "(none)"}`,
+    "Each proposal needs a section (identity.mission, identity.voice, identity.principles or probes), the change, and the evidence behind it.",
+    'Answer with JSON only: {"proposals":[{"section":"...","change":"...","evidence":["..."]}]}',
+  ].join("\n");
+
+  void (async () => {
+    const answer = await soulModelText(ctx, prompt, 900);
+    const parsed = parseModelJson(answer);
+    const proposals = Array.isArray(parsed?.proposals) ? parsed.proposals : [];
+    if (proposals.length === 0) {
+      appendProposal(colony.name, {
+        kind: "reflection",
+        section: null,
+        change: null,
+        status: "rejected",
+        error: answer
+          ? "the model answer carried no usable proposals"
+          : "no model runtime was reachable, so nothing was proposed",
+        at: new Date().toISOString(),
+      });
+      return;
+    }
+    for (const proposal of proposals.slice(0, 2)) {
+      if (!proposal || typeof proposal.change !== "string" || !proposal.change.trim()) continue;
+      appendProposal(colony.name, {
+        kind: "reflection",
+        section: typeof proposal.section === "string" ? proposal.section : "identity.principles",
+        change: proposal.change.trim(),
+        evidence: Array.isArray(proposal.evidence) ? proposal.evidence.slice(0, 5).map(String) : [],
+        source: bootstrap ? "bootstrap" : "reflect",
+      });
+    }
+  })();
+
+  return { status: 200, body: { started: true, queen_id: queenId, colony_id: colony.name, bootstrap } };
 };
 
 const listClaudeCodeQueens = async () => ({ status: 200, body: { queens: [] } });
@@ -1669,8 +1774,8 @@ export function registerQueenRoutes(registry, ctx = {}) {
     ["PUT", "/api/queen/:queen/soul", putSoul, IMPLEMENTED, "writes soul.json, bumps the version and snapshots it"],
     ["POST", "/api/queen/:queen/soul/proposals/:proposal/decide", decideSoulProposal, IMPLEMENTED, "applies or dismisses a real soul_proposals.jsonl record"],
     ["POST", "/api/queen/:queen/soul/rollback", rollbackSoul, IMPLEMENTED, "restores a snapshotted soul version as a new version"],
-    ["POST", "/api/queen/:queen/soul/proposals/:proposal/probe", probeSoulProposal, PARTIAL, "no probe-question store or model call; 400"],
-    ["POST", "/api/queen/:queen/soul/reflect", reflectSoul, PARTIAL, "reflection needs the model runtime; 400 points at the native review route"],
+    ["POST", "/api/queen/:queen/soul/proposals/:proposal/probe", probeSoulProposal, IMPLEMENTED, "starts a model probe; the question (or the failure) is recorded as a probing entry"],
+    ["POST", "/api/queen/:queen/soul/reflect", reflectSoul, IMPLEMENTED, "starts a background reflection (bootstrap supported); unreachable model is recorded, not faked"],
 
     // Claude Code queens
     ["GET", "/api/claude-code-queens", listClaudeCodeQueens, IMPLEMENTED, "valid empty list: no Claude Code integration"],
