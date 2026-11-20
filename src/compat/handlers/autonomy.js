@@ -1266,6 +1266,86 @@ async function handlePutNotifications({ req, params, ctx }) {
   return ok(buildSentinelConfig(colony, ctx));
 }
 
+/**
+ * Send one real message over a channel.
+ *
+ * The token comes from the request's target (or the environment) and is used as
+ * a URL segment / bearer header only. The result is recorded in the inbox and
+ * returned as `{ok, message_id, error}` — a provider refusal is a result, not a
+ * missing capability.
+ */
+async function sendToTransport(colony, { channel, target, body }) {
+  const text =
+    typeof body.message === "string" && body.message.trim()
+      ? body.message.trim()
+      : `Sentinel test for colony "${colony}". Deliveries will arrive here.`;
+
+  if (channel === "telegram") {
+    const token = typeof target.token === "string" && target.token ? target.token : telegramToken();
+    const chatId = target.chat_id ?? target.chatId ?? null;
+    if (!token) return fail(400, "no Telegram token provided or saved", { ok: false });
+    if (!chatId) return fail(400, "target.chat_id is required to send a Telegram message", { ok: false });
+    const probe = await telegramApi(token, "sendMessage", `?chat_id=${encodeURIComponent(chatId)}&text=${encodeURIComponent(text)}`);
+    const messageId = probe.ok ? String(probe.result?.message_id ?? "") || null : null;
+    appendInboxRecord(colony, {
+      at: new Date().toISOString(),
+      colony,
+      kind: "test",
+      channel: "telegram",
+      message_id: messageId,
+      reason: text,
+      last_message: probe.ok ? text : "",
+      ...(probe.ok ? {} : { error: probe.error }),
+    });
+    return ok({ ok: probe.ok, message_id: messageId, error: probe.ok ? null : probe.error });
+  }
+
+  const token = typeof target.token === "string" && target.token ? target.token : slackBotToken();
+  const slackChannel = target.channel_id ?? target.channel ?? target.chat_id ?? null;
+  if (!token) return fail(400, "no Slack token provided or saved", { ok: false });
+  if (!slackChannel) return fail(400, "target.channel is required to send a Slack message", { ok: false });
+  const result = await slackPostMessage(token, slackChannel, text);
+  const messageId = result.ok ? String(result.result?.ts ?? "") || null : null;
+  appendInboxRecord(colony, {
+    at: new Date().toISOString(),
+    colony,
+    kind: "test",
+    channel: "slack",
+    message_id: messageId,
+    reason: text,
+    last_message: result.ok ? text : "",
+    ...(result.ok ? {} : { error: result.error }),
+  });
+  return ok({ ok: result.ok, message_id: messageId, error: result.ok ? null : result.error });
+}
+
+/** Slack `chat.postMessage`, same token rules as `auth.test`. */
+async function slackPostMessage(token, channelId, text) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), SENTINEL_HTTP_TIMEOUT_MS);
+  try {
+    const body = new URLSearchParams({ channel: String(channelId), text });
+    const response = await fetch("https://slack.com/api/chat.postMessage", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/x-www-form-urlencoded; charset=utf-8",
+      },
+      body: body.toString(),
+      signal: controller.signal,
+    });
+    const payload = await response.json().catch(() => null);
+    if (!payload) return { ok: false, error: `HTTP ${response.status}` };
+    if (payload.ok !== true) return { ok: false, error: payload.error || `HTTP ${response.status}` };
+    return { ok: true, result: payload };
+  } catch (err) {
+    const reason = err?.name === "AbortError" ? `no answer within ${SENTINEL_HTTP_TIMEOUT_MS} ms` : err?.message || String(err);
+    return { ok: false, error: reason };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function handleTestNotification({ req, params, ctx }) {
   const colony = existingColonyName(String(params?.colony || ""));
   if (!colony) return fail(404, `Colony '${params?.colony}' not found`);
@@ -1282,12 +1362,7 @@ async function handleTestNotification({ req, params, ctx }) {
   }
 
   if (channel === "telegram" || channel === "slack") {
-    const message = channel === "telegram" ? TELEGRAM_UNAVAILABLE : SLACK_UNAVAILABLE;
-    return unavailable(400, message, {
-      what: `Sentinel has no ${channel} transport`,
-      why: "pi_hive escalations are written to the colony's local inbox; no outbound bot/listener is implemented.",
-      fix: "Test the 'hive' channel (local inbox) or add the channel transport to pi_hive.",
-    });
+    return sendToTransport(colony, { channel, target, body });
   }
 
   const messageId = `inbox_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;

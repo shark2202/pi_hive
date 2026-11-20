@@ -132,15 +132,29 @@ test("registers the official organization routes with honest statuses", () => {
   assert.throws(() => registerOrganizationRoutes({}, {}), /RouteRegistry/);
 });
 
-test("queen profiles expose exactly pi_hive's four built-in queens", async () => {
+test("queen profiles expose exactly the 13 built-in queens", async () => {
   useHome();
   const body = await invoke(makeRegistry(), "GET", "/api/queen/profiles");
 
   assert.ok(Array.isArray(body.queens));
-  assert.equal(body.queens.length, 4);
+  assert.equal(body.queens.length, 13);
   assert.deepEqual(
     body.queens.map((queen) => queen.id),
-    ["queen_growth", "queen_tech", "queen_finance", "queen_ops"],
+    [
+      "queen_growth",
+      "queen_tech",
+      "queen_finance",
+      "queen_ops",
+      "queen_product",
+      "queen_marketing",
+      "queen_sales",
+      "queen_legal",
+      "queen_people",
+      "queen_support",
+      "queen_data",
+      "queen_design",
+      "queen_research",
+    ],
   );
   assert.deepEqual(body.queens, BUILT_IN_QUEENS);
 
@@ -153,7 +167,7 @@ test("queen profiles expose exactly pi_hive's four built-in queens", async () =>
     assert.equal(queen.has_avatar, false);
   }
 
-  assert.equal(new Set(body.queens.map((queen) => queen.id)).size, 4, "ids must be unique");
+  assert.equal(new Set(body.queens.map((queen) => queen.id)).size, 13, "ids must be unique");
 });
 
 test("tools-index is built from real colony metadata and tools.json", async () => {

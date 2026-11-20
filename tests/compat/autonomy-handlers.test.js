@@ -520,24 +520,26 @@ test("Sentinel config round-trips through notifications.json and metadata", asyn
   assert.equal(result.status, 404);
 });
 
-test("Sentinel test sends to the local inbox and rejects unimplemented channels", async () => {
+test("Sentinel test delivers over the local inbox and the real transports", async () => {
   useHome();
   createColony({ name: "acme" });
   const registry = makeRegistry();
+  delete process.env.PI_HIVE_TELEGRAM_TOKEN;
+  delete process.env.PI_HIVE_TELEGRAM_BOT_TOKEN;
+  delete process.env.PI_HIVE_SLACK_BOT_TOKEN;
+  delete process.env.PI_HIVE_SLACK_TOKEN;
 
   // Not configured at all.
   let result = await call(registry, "POST", "/api/colony/acme/notifications/test", { body: {} });
   assert.equal(result.status, 400);
   assert.match(result.body.error, /channel and target required/);
 
-  // Telegram is honestly unavailable, not a fake ok.
+  // A transport without a token is a request error, not a fake failure.
   result = await call(registry, "POST", "/api/colony/acme/notifications/test", {
     body: { channel: "telegram", target: { chat_id: "123" } },
   });
   assert.equal(result.status, 400);
-  assert.equal(result.body.code, "integration_unavailable");
-  assert.match(result.body.error, /no Telegram transport/);
-  assert.equal("ok" in result.body, false);
+  assert.match(result.body.error, /no Telegram token/);
 
   // Local hive channel writes a real inbox record.
   result = await call(registry, "POST", "/api/colony/acme/notifications/test", {
@@ -564,12 +566,51 @@ test("Sentinel test sends to the local inbox and rejects unimplemented channels"
   assert.equal(result.status, 200);
   assert.equal(readInbox("acme").length, 2);
 
-  // Slack is equally explicit.
-  result = await call(registry, "POST", "/api/colony/acme/notifications/test", {
-    body: { channel: "slack", target: { channel: "C1" } },
-  });
-  assert.equal(result.status, 400);
-  assert.match(result.body.error, /no Slack transport/);
+  // Telegram and Slack really call their APIs; the fake fetch records the request.
+  const originalFetch = globalThis.fetch;
+  const sent = [];
+  globalThis.fetch = async (url, options = {}) => {
+    sent.push({ url: String(url), options });
+    if (String(url).includes("sendMessage")) {
+      return { status: 200, json: async () => ({ ok: true, result: { message_id: 99 } }) };
+    }
+    if (String(url).includes("chat.postMessage")) {
+      return { status: 200, json: async () => ({ ok: true, ts: "1700000000.000100" }) };
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+  try {
+    const telegram = await call(registry, "POST", "/api/colony/acme/notifications/test", {
+      body: { channel: "telegram", target: { chat_id: "123", token: "tg-token" }, message: "heads up" },
+    });
+    assert.equal(telegram.status, 200);
+    assert.deepEqual(telegram.body, { ok: true, message_id: "99", error: null });
+    assert.match(sent[0].url, /sendMessage\?chat_id=123&text=heads%20up/);
+    assert.equal(sent[0].url.includes("tg-token"), true, "the token travels in the URL segment");
+
+    const slack = await call(registry, "POST", "/api/colony/acme/notifications/test", {
+      body: { channel: "slack", target: { channel: "C1", token: "xoxb-1" }, message: "heads up" },
+    });
+    assert.equal(slack.status, 200);
+    assert.deepEqual(slack.body, { ok: true, message_id: "1700000000.000100", error: null });
+    assert.equal(sent[1].options.headers.authorization, "Bearer xoxb-1");
+    assert.match(sent[1].options.body, /channel=C1&text=heads\+up/);
+
+    // A provider refusal is reported and still lands in the inbox.
+    globalThis.fetch = async () => ({ status: 200, json: async () => ({ ok: false, error: "chat_not_found" }) });
+    const refused = await call(registry, "POST", "/api/colony/acme/notifications/test", {
+      body: { channel: "slack", target: { channel: "C404", token: "xoxb-1" } },
+    });
+    assert.equal(refused.status, 200);
+    assert.equal(refused.body.ok, false);
+    assert.equal(refused.body.error, "chat_not_found");
+    const recorded = readInbox("acme").at(-1);
+    assert.equal(recorded.channel, "slack");
+    assert.equal(recorded.error, "chat_not_found");
+    assert.equal(recorded.message_id, null);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("Sentinel credentials report token presence without exposing values", async () => {

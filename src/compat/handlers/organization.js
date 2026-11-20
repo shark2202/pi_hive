@@ -39,6 +39,15 @@ export const BUILT_IN_QUEENS = Object.freeze(
     { id: "queen_tech", name: "Technology Queen", title: "Head of Technology" },
     { id: "queen_finance", name: "Finance Queen", title: "Head of Finance" },
     { id: "queen_ops", name: "Operations Queen", title: "Head of Operations" },
+    { id: "queen_product", name: "Product Queen", title: "Head of Product" },
+    { id: "queen_marketing", name: "Marketing Queen", title: "Head of Marketing" },
+    { id: "queen_sales", name: "Sales Queen", title: "Head of Sales" },
+    { id: "queen_legal", name: "Legal Queen", title: "Head of Legal" },
+    { id: "queen_people", name: "People Queen", title: "Head of People" },
+    { id: "queen_support", name: "Support Queen", title: "Head of Support" },
+    { id: "queen_data", name: "Data Queen", title: "Head of Data" },
+    { id: "queen_design", name: "Design Queen", title: "Head of Design" },
+    { id: "queen_research", name: "Research Queen", title: "Head of Research" },
   ].map((queen) => Object.freeze({ ...queen, has_avatar: false, custom: false })),
 );
 

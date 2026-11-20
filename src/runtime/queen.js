@@ -4,7 +4,7 @@ import { EventEmitter } from "node:events";
 import { colonyPaths, loadMetadata, saveMetadata } from "../domain/colony.js";
 import { openTracker } from "../domain/tracker.js";
 import { getPlan, listTasks } from "../domain/plan.js";
-import { readMemory } from "../domain/memory.js";
+import { readMemory, recallForPrompt } from "../domain/memory.js";
 import { skillCatalog } from "../domain/skills.js";
 import { loadSoul } from "../domain/soul.js";
 import { createPiAgent, lastAssistantText } from "../kernel/agent.js";
@@ -14,13 +14,27 @@ import { fsTools } from "./fs-tools.js";
 import { ReminderHub, TrackerSnapshotSource, ActiveWorkersSource, ColonyParallelSource, IdleSource } from "./reminders.js";
 import { WorkerManager } from "./worker.js";
 import { SoulEngine } from "./soul.js";
+import { persistEvents, readEvents } from "../domain/event-log.js";
 import { queenDefaults } from "../config.js";
 
+/**
+ * The 13 Queens. Each persona is one paragraph of voice and standard: it shapes
+ * how the same colony is run, not what the colony is allowed to do.
+ */
 const QUEEN_PERSONA = {
   queen_growth: "You are the Growth Queen: acquisition, experiments, and market insight. You are direct, evidence-driven, and allergic to vague growth advice.",
   queen_tech: "You are the Technology Queen: engineering, architecture, and delivery. You are precise, skeptical of hand-waving, and prefer verifiable results.",
   queen_finance: "You are the Finance Queen: models, budgets, and fundraising. You are conservative with assumptions and explicit about risk.",
   queen_ops: "You are the Operations Queen: process, back-office, and execution discipline. You make work repeatable.",
+  queen_product: "You are the Product Queen: what gets built and why. You start from the user's problem, cut scope honestly, and refuse features without a decision they unblock.",
+  queen_marketing: "You are the Marketing Queen: positioning, narrative, and channels. You write for one reader, test the claim before scaling the spend, and measure attention, not activity.",
+  queen_sales: "You are the Sales Queen: pipeline, qualification, and closing. You qualify out early, keep the next step explicit, and never confuse interest with commitment.",
+  queen_legal: "You are the Legal Queen: contracts, obligations, and risk. You read the actual clause, name the exposure in plain language, and never let urgency erase a signature.",
+  queen_people: "You are the People Queen: hiring, performance, and culture. You make expectations written, feedback specific, and decisions explainable to the person affected.",
+  queen_support: "You are the Support Queen: customers in trouble. You reproduce first, answer with the fix or the honest timeline, and turn repeats into product work.",
+  queen_data: "You are the Data Queen: metrics, models, and evidence. You ask what the number would look like if the hypothesis were wrong, and you refuse dashboards nobody acts on.",
+  queen_design: "You are the Design Queen: interface, flow, and taste. You design the first screen before the edge case, and you treat every extra control as a decision someone has to make.",
+  queen_research: "You are the Research Queen: unknowns, prior art, and experiments. You separate what is known from what is assumed, and you design the cheapest test that could change the plan.",
 };
 
 export class QueenRuntime extends EventEmitter {
@@ -38,6 +52,9 @@ export class QueenRuntime extends EventEmitter {
     this.soul = new SoulEngine({ queen: this, colony, modelRuntime });
     this.queue = [];
     this.running = false;
+    // Every event the queen emits is also appended to colonies/<name>/events.jsonl,
+    // so a client that reconnects can replay from its last cursor.
+    persistEvents(colony, this);
     this.lastActivity = Date.now();
     this.pendingReports = [];
     this.reminderTimer = null;
@@ -100,10 +117,16 @@ export class QueenRuntime extends EventEmitter {
     const plan = getPlan(this.colony);
     const open = listTasks(this.colony).filter((t) => !["completed", "archived"].includes(t.status));
     const tables = this.tracker.tableNames();
-    const memory = [readMemory(this.colony, "global"), readMemory(this.colony, "queen", this.queenId), readMemory(this.colony, "colony")]
-      .filter(Boolean)
-      .join("\n\n")
-      .slice(0, 12000);
+    // Recall first: only the blocks that match this colony's goal/task text.
+    // The full memory stays reachable through the memory tools, so the prompt
+    // carries what is relevant instead of everything ever written.
+    const focus = `${meta.goal || ""} ${plan.goal || ""} ${open.map((task) => `${task.subject} ${task.description || ""}`).join(" ")}`;
+    const recalled = recallForPrompt(this.colony, focus, { queenId: this.queenId, limit: 6 }).slice(0, 8000);
+    const memory = recalled ||
+      [readMemory(this.colony, "global"), readMemory(this.colony, "queen", this.queenId), readMemory(this.colony, "colony")]
+        .filter(Boolean)
+        .join("\n\n")
+        .slice(0, 6000);
     const soul = loadSoul(this.colony);
     const soulLines = [];
     if (soul.identity.mission) soulLines.push(`Mission: ${soul.identity.mission}`);

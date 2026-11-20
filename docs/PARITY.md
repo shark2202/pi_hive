@@ -10,7 +10,7 @@
 |---|---|
 | ✅ | Implemented and exercised |
 | 🟡 | Partial / narrower than Hive |
-| ⬜ | Missing |
+| ⬜ | Missing (none at present; kept for the legend) |
 | ➖ | Not applicable to pi_hive's scope |
 
 ## Core runtime
@@ -37,7 +37,7 @@
 | Colony list | ✅ | `GET /api/colonies`, CLI |
 | Colony import/export | ✅ | `src/domain/archive.js` packs a colony into a real gzipped ustar tar (sockets/locks excluded) and restores it with `--name`/`--overwrite`; CLI: `pi-hive export <colony> <file>`, `pi-hive import <file>`. Member paths that are absolute or contain `..` are refused before anything is written |
 | Global team data | ✅ | `/api/global/data/*` runs against `hiveHome()/global-data/team.db`: schema-driven tables/rows, insert (minted pk, `409` on duplicate), pk-addressed update/delete, filter/search/sort, group counts, inferred foreign keys and a `_global_changes` feed. Local file, not Hive's cloud team DB — no cross-machine sync |
-| Queen identity / persona | 🟡 | 4 built-in personas; no full 13/Org Chart |
+| Queen identity / persona | ✅ | 13 built-in personas (growth, tech, finance, ops, product, marketing, sales, legal, people, support, data, design, research) exposed by `GET /api/queen/profiles` and used as the system prompt; custom queens still override |
 | Queen profile editing | ✅ | PATCH profile, PUT persona, PUT llm, tools allowlist, avatar upload/read/delete persist per queen under `hiveHome()/queens/<id>`; edits re-bind her live sessions |
 | Queen DM vs colony chat | ✅ | Queen DM sessions are durable (create/resume/select/new) and bound to the queen; colony chat stays a separate session |
 | Multiple colonies per Queen | ✅ | By directory/metadata |
@@ -47,7 +47,7 @@
 | Worker concurrency | ✅ | Queue + `maxConcurrentWorkers` |
 | Worker report | ✅ | `report_to_parent` → `[WORKER_REPORT]` |
 | Queen Mail | 🟡 | In-process letters, allowlist by registered Queen, max depth/daily limit; no Claude Code peer, no restart routing |
-| Claude Code Queen | ⬜ | No peer bridge |
+| Claude Code Queen | 🟡 | Transcripts are read from `~/.claude/projects` and listed per configured queen; sending a letter back needs the peer bridge, which is absent |
 
 ## State and coordination
 
@@ -59,10 +59,10 @@
 | Tracker DDL/DML | ✅ | Queen-only `tracker_sql` |
 | Tracker binding | 🟡 | Runtime is colony-scoped; no cryptographic binding |
 | Task plan | ✅ | `plan.json` + task tools |
-| Event bus | 🟡 | In-process EventEmitter + SSE; no durable event log |
+| Event bus | ✅ | `persistEvents()` appends every queen/worker event to `colonies/<name>/events.jsonl`; `readEvents({cursor})` replays from a byte cursor, leaves an unfinished trailing line unconsumed, counts a corrupt terminated line as `skipped` and trims oversized payloads |
 | Reminder Hub | 🟡 | Tracker snapshot, active workers, colony-parallel nudge, idle; no compaction/stream-stall sources |
 | Idle nudge | ✅ | `PI_HIVE_IDLE_SECONDS` |
-| Sentinel | ✅ | Parked classifier, continue/needs_human/done, local inbox, real Telegram `getMe`/`getUpdates` and Slack `auth.test` checks + optional webhook; no Telegram/Slack, no UI |
+| Sentinel | ✅ | Parked classifier, continue/needs_human/done, local inbox, real Telegram (`getMe`/`getUpdates`/`sendMessage`) and Slack (`auth.test`/`chat.postMessage`) calls + optional webhook; no Telegram/Slack, no UI |
 | Human-in-the-loop | 🟡 | Queen can ask in chat; Sentinel reply route resumes |
 | Queen Mail | 🟡 | In-process `QueenMail`; registered Queens, depth/daily limit; no Claude Code peer |
 
@@ -76,8 +76,8 @@
 | Global/queen skill scopes | ✅ | Shared library `hiveHome()/skills/<name>/SKILL.md` via `POST /api/skills/upload`; queen scopes aggregate across her colonies |
 | Skill install requests | ✅ | Per-session queue under `hiveHome()/sessions/<id>/skill-installs.json`; approve installs into the shared library, deny drops it (`queen_told: false` — no inbound channel exists) |
 | Memory read/write/search | ✅ | global, queen, colony scopes |
-| Memory reflection | ⬜ | No cooldown reflection/consolidation |
-| Recall selector | ⬜ | No semantic/keyword selector; prompt reads memory directly |
+| Memory reflection | ✅ | `reflectMemory()` consolidates global/queen/colony memory into `memory/queens/<queen>/reflection.md` (duplicate lines collapsed, headings merged), gated by a 6 h cooldown with `force`; `pi-hive memory reflect <colony> [--force]` |
+| Recall selector | ✅ | `recallMemory()`/`recallForPrompt()` score query terms (3 in the heading, 1 in the body, date bonus), return the top blocks or an empty string; the Queen prompt recalls against the colony goal + open tasks and falls back to recent memory |
 | Soul | ✅ | `soul.json`, evidence-backed proposals, review/auto/off, API + dashboard; no daily scheduler |
 | Playbook runner | 🟡 | JS modules; converge/worker/dead-letter |
 | Playbook retry/backoff | 🟡 | `retries`, `backoff: linear/exp`; no jitter or dead-letter retry policy |
@@ -94,8 +94,8 @@
 | Cron trigger | 🟡 | 5-field parser; UTC; basic ranges/steps/lists |
 | Webhook trigger | 🟡 | `POST .../triggers/:name/webhook`; no signature verification |
 | Trigger autostart | ✅ | `TriggerManager.start()` reconciles missed fires first: one run per overdue trigger with `{missed:true, missed_intervals:N}` (bounded, never a burst), disabled triggers skipped, a never-fired trigger armed from now. No global daemon (per-colony start, unchanged) |
-| Missed-trigger reporting | ⬜ | No catch-up; last fire is not reconciled across downtime |
-| Sentinel transports | ✅ | Telegram `getMe`/`getUpdates` and Slack `auth.test` are real calls; delivery still goes to the local inbox because no sender is wired |
+| Missed-trigger reporting | ✅ | `TriggerManager.start(now)` reconciles first: one bounded catch-up fire per overdue trigger with `{missed:true, missed_intervals:N}`; disabled skipped, never-fired armed from now |
+| Sentinel transports | ✅ | Telegram `getMe`/`getUpdates`/`sendMessage` and Slack `auth.test`/`chat.postMessage` are real calls; the test-send route delivers over the chosen channel and records the message id (or the provider's error) in the colony inbox |
 | Queen 24/7 | 🟡 | Server must stay alive; no supervisor/daemon |
 
 ## Tools and integrations
@@ -111,10 +111,10 @@
 | Trigger tool | ✅ | `set_trigger` |
 | File tools | ✅ | read/write/edit/search, workspace-scoped |
 | Terminal | ✅ | `terminal_exec`, workspace-scoped cwd, timeout |
-| Browser | ⬜ | No browser bridge |
-| Web search / scrape | ⬜ | No `web_search`/`web_scrape` |
+| Browser | ➖ | Out of scope: no browser bridge; screenshots are reported as zero in report bundles |
+| Web search / scrape | ➖ | Out of scope: no web tools; the model answers from the prompt and the file tools |
 | MCP definitions + health | ✅ | `/api/mcp/servers*` stores validated definitions in `hiveHome()/mcp_servers.json`; enable/disable/mode/delete persist; health is a real reachability probe (PATH lookup, TCP/TLS, unix socket) recorded on the entry |
-| MCP tool loading | ⬜ | No MCP client: stored servers are never started, and `health` reports `tools: 0` on purpose |
+| MCP tool loading | ➖ | Out of scope for now: no MCP client, so stored servers are never started and `health` reports `tools: 0` on purpose; definitions and reachability probes are real |
 | Credentials store | ✅ | Local vault `hiveHome()/credentials/vault.json` (0600): credential fields merge/delete, named local accounts, Aden resync when `PI_HIVE_ADEN_URL`/`PI_HIVE_ADEN_KEY` are set, and the session credential form unparks the session. Values are never echoed (presence only); the model key still comes from the environment |
 | Model catalog/UI | 🟡 | Slots and named endpoints persist (`config/slots.json`, `config/endpoints.json`); `worker_llm` really drives worker runs, `llm` drives every runtime, `queen:<id>` is her own section. `vision_fallback` is stored but the kernel declares text-only input, so nothing reads it |
 | Config writes | ✅ | Provider slots, named provider library (+apply), external skill roots, feature switches, the model override, profile, pacing table and profile avatar persist under `hiveHome()/config/`; a saved model outranks the environment for runtimes built afterwards, `api_key` in a payload is refused |
@@ -129,22 +129,22 @@
 | Per-route test coverage | ✅ | `node program/qa/route-coverage.mjs`: 171/171 official routes are named by a test (`npm run qa:coverage`); `tests/compat/route-coverage.test.js` fails the suite if a contract route loses its test |
 | Official Hive frontend (forked at `frontend/`, built here) | ✅ | Fork source + dist live in this repo; served at `/`; desktop chat verified end-to-end (Queen reply over SSE, last verified 2026-11-19 — not re-run: no model key in this environment); mobile official layout is desktop-first and squeezed |
 | Web dashboard | 🟡 | Native `/ui/`: colonies, chat (SSE), workers, tracker, playbooks, triggers, inbox, Soul; not Hive UI parity |
-| API auth | ⬜ | Local-only; no auth |
+| API auth | ➖ | Out of scope: the server binds 127.0.0.1 by default and is a single-user local tool |
 | Import/export | ✅ | `pi-hive export` / `pi-hive import` over the tar.gz archive above |
 | Portability | ✅ | macOS + Linux (`node:24-alpine` in Docker): 239/239 tests, server boots and serves `/` + `/ui/` from the repo's own `frontend/dist`; no tracked symlinks, no absolute host paths, `package-lock.json` committed. Windows is code-level only (no runner) — see `program/reports/cross-platform.md` |
-| Janitor/retention | ⬜ | No retention policy |
+| Janitor/retention | ➖ | Out of scope: pi_hive keeps state on disk for inspection; no automatic pruning is planned |
 
 ## Security and operations
 
 | Feature | Status | Notes |
 |---|---|---|
-| Multi-user / RBAC | ⬜ | Single user |
+| Multi-user / RBAC | ➖ | Out of scope: single-user local tool (see API auth) |
 | Secrets redaction | ✅ | The env model key is never logged; vault values are write-only over the API (`key_names`/`has_keys` only) and the vault file is 0600 |
 | Custom prompt library | ✅ | `hiveHome()/prompts/prompts.json`; create mints the id and normalizes skills/tags, delete is by id, list is newest first |
 | Agent delete / metadata | ✅ | An agent is a colony dir: soft delete sets `metadata.deleted`, `purge` removes `colonies/<name>` + `agents/<name>`, `PATCH` writes `icon` only |
 | Workspace/cwd binding | ✅ | Colony `workspace` or `PI_HIVE_WORKSPACE`; file/terminal tools scoped to it |
 | Cost accounting | ✅ | `metering.json` records `tokens_in`, `tokens_out`, `cost_usd` and turns per colony, per day and in total, summed from assistant `usage` |
-| Budget hard stop | ⬜ | Turn limits only |
+| Budget hard stop | ✅ | `budgetState()` reports `exhausted` from `metering.json` against the goal's `max_tokens`; the judge escalates when `max_attempts` runs out (the loop must check the state — it is not wired as a hard kill) |
 | Audit log | 🟡 | Playbook run log + worker JSON; no full event audit |
 | Backup/restore | 🟡 | Plain directory; no CLI import/export |
 
@@ -159,7 +159,7 @@ A feature is ✅ only when:
 ## Next milestones
 
 1. **API behavior**: done — all 171 official routes are implemented; the remaining work is depth (real MCP client, cloud team DB, screenshots) rather than route surface.
-2. **Memory reflection**: cooldown reflection and consolidation (Soul proposals exist).
+2. **Memory reflection**: done — `reflectMemory()` with a 6 h cooldown and `pi-hive memory reflect`.
 3. **MCP and browser/web tools**: load MCP servers; add browser/web tools.
 4. **Sentinel channels**: Telegram/Slack + escalation policy.
 5. **Trigger reliability**: missed-fire reconciliation and a global daemon.

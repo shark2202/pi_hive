@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { PI_HIVE_VERSION, serverConfig } from "./config.js";
 import { exportColonyToFile, importColony } from "./domain/archive.js";
+import { reflectMemory } from "./domain/memory.js";
 import { createColony, listColonies, loadMetadata } from "./domain/colony.js";
 import { openTracker } from "./domain/tracker.js";
 import { createModelRuntime } from "./kernel/model.js";
@@ -27,6 +28,7 @@ Usage:
   pi-hive trigger list <colony>
   pi-hive export <colony> <file.tar.gz>
   pi-hive import <file.tar.gz> [--name <colony>] [--overwrite]
+  pi-hive memory reflect <colony> [--force]
 `);
 }
 
@@ -140,6 +142,15 @@ async function main() {
     } finally {
       tracker.close();
     }
+    return;
+  }
+
+  if (cmd === "memory") {
+    const sub = process.argv[3];
+    const colony = process.argv[4];
+    if (sub !== "reflect" || !colony) return usage();
+    const result = reflectMemory(colony, { force: process.argv.includes("--force") });
+    console.log(JSON.stringify(result, null, 2));
     return;
   }
 
