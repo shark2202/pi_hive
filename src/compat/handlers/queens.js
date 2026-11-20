@@ -38,6 +38,11 @@ import {
   proposalsPath,
   saveSoul,
 } from "../../domain/soul.js";
+import {
+  configuredQueens as configuredClaudeQueens,
+  conversationIds as claudeConversationIds,
+  readTranscript as readClaudeTranscript,
+} from "../../domain/claude-code.js";
 import { memoryTools } from "../../runtime/memory-tools.js";
 import { planTools, skillTools, soulTools, trackerTools } from "../../runtime/tools.js";
 import { ROUTE_STATUS } from "../router.js";
@@ -1699,16 +1704,51 @@ const reflectSoul = async ({ params, req, ctx } = {}) => {
   return { status: 200, body: { started: true, queen_id: queenId, colony_id: colony.name, bootstrap } };
 };
 
-const listClaudeCodeQueens = async () => ({ status: 200, body: { queens: [] } });
+/**
+ * Queens whose mail is handled by Claude Code. The transcript list is read from
+ * `~/.claude/projects` (what Claude Code actually wrote), so `running` is false:
+ * this host cannot see another process's live turn state.
+ */
+const listClaudeCodeQueens = async () => {
+  const conversations = claudeConversationIds();
+  const queens = configuredClaudeQueens().map((queen) => ({
+    id: queen.id,
+    name: queen.name,
+    title: queen.title,
+    permission_mode: queen.permission_mode,
+    auth: queen.auth,
+    model: queen.model,
+    conversations: conversations.map((conversation) => ({
+      session_id: conversation.session_id,
+      peer: queen.id,
+      peer_name: queen.name,
+      running: false,
+      letters: 0,
+      last_at: conversation.last_at,
+    })),
+  }));
+  return { status: 200, body: { queens } };
+};
 
-const claudeCodeTranscript = async ({ params }) => {
+const claudeCodeTranscript = async ({ params } = {}) => {
   const queenId = typeof params?.queen === "string" ? params.queen : "";
   const conversation = typeof params?.conversation === "string" ? params.conversation : "";
-  return fail(
-    404,
-    `No conversation ${conversation} of ${queenId}: pi_hive has no Claude Code queen integration`,
-    { type: "unsupported", queen_id: queenId, conversation_id: conversation },
-  );
+  const queen = configuredClaudeQueens().find((entry) => entry.id === queenId);
+  if (!queen) {
+    return fail(404, `No Claude Code queen '${queenId}' is configured`, {
+      type: "not_found",
+      queen_id: queenId,
+    });
+  }
+  const transcript = readClaudeTranscript(conversation);
+  if (!transcript) {
+    return fail(404, `No transcript for conversation '${conversation}'`, {
+      type: "not_found",
+      queen_id: queenId,
+      conversation_id: conversation,
+    });
+  }
+  return { status: 200, body: { entries: transcript.entries } };
 };
 
 // ---------------------------------------------------------------------------
@@ -1778,13 +1818,13 @@ export function registerQueenRoutes(registry, ctx = {}) {
     ["POST", "/api/queen/:queen/soul/reflect", reflectSoul, IMPLEMENTED, "starts a background reflection (bootstrap supported); unreachable model is recorded, not faked"],
 
     // Claude Code queens
-    ["GET", "/api/claude-code-queens", listClaudeCodeQueens, IMPLEMENTED, "valid empty list: no Claude Code integration"],
+    ["GET", "/api/claude-code-queens", listClaudeCodeQueens, IMPLEMENTED, "configured Claude Code queens plus the transcripts Claude Code wrote"],
     [
       "GET",
       "/api/claude-code-queens/:queen/conversations/:conversation",
       claudeCodeTranscript,
-      PARTIAL,
-      "no Claude Code transcripts; explicit 404",
+      IMPLEMENTED,
+      "the JSONL transcript of a configured queen; 404 for an unknown queen or conversation",
     ],
   ];
 

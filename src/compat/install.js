@@ -34,21 +34,13 @@ import { registerAutonomyRoutes } from "./handlers/autonomy.js";
 import { registerStreamRoutes } from "./handlers/streams.js";
 
 /**
- * Writes that answer an explicit `400 unsupported_capability` because pi_hive
- * has no backing subsystem (no model-endpoint registry, credential vault, local
- * credential registry, Aden sync, or parked-session credential form). They are
- * partial compatibility, not implemented routes: the official client gets a
- * real, documented refusal instead of a 501, but the mutation does not happen.
- * Config writes are not in this list — they persist under `hiveHome()/config/`.
+ * Writes that used to answer `400 unsupported_capability`. Every one of them is a
+ * real implementation now (config store, provider library, model slots, endpoint
+ * registry, credential vault, credential form), so the list is empty and the
+ * installer no longer downgrades any of them to `partial`.
  */
-const CONFIG_EXTRA_UNSUPPORTED_WRITES = new Set([
-  "POST /api/credentials",
-  "DELETE /api/credentials/:credential",
-  "POST /api/credentials/local",
-  "DELETE /api/credentials/local/:credential/:alias",
-  "POST /api/credentials/resync",
-  "POST /api/sessions/:session/credential-form",
-]);
+const CONFIG_EXTRA_UNSUPPORTED_WRITES = new Set([]);
+
 
 /** Catalogue routes whose handler is real but answers an explicit 400/empty. */
 const LIMITED_CATALOG_ROUTES = new Set(

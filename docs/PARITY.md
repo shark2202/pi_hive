@@ -113,7 +113,7 @@
 | Web search / scrape | ⬜ | No `web_search`/`web_scrape` |
 | MCP definitions + health | ✅ | `/api/mcp/servers*` stores validated definitions in `hiveHome()/mcp_servers.json`; enable/disable/mode/delete persist; health is a real reachability probe (PATH lookup, TCP/TLS, unix socket) recorded on the entry |
 | MCP tool loading | ⬜ | No MCP client: stored servers are never started, and `health` reports `tools: 0` on purpose |
-| Credentials store | 🟡 | Env only; no encrypted store/UI |
+| Credentials store | ✅ | Local vault `hiveHome()/credentials/vault.json` (0600): credential fields merge/delete, named local accounts, Aden resync when `PI_HIVE_ADEN_URL`/`PI_HIVE_ADEN_KEY` are set, and the session credential form unparks the session. Values are never echoed (presence only); the model key still comes from the environment |
 | Model catalog/UI | 🟡 | Slots and named endpoints persist (`config/slots.json`, `config/endpoints.json`); `worker_llm` really drives worker runs, `llm` drives every runtime, `queen:<id>` is her own section. `vision_fallback` is stored but the kernel declares text-only input, so nothing reads it |
 | Config writes | ✅ | Provider slots, named provider library (+apply), external skill roots, feature switches, the model override, profile, pacing table and profile avatar persist under `hiveHome()/config/`; a saved model outranks the environment for runtimes built afterwards, `api_key` in a payload is refused |
 
@@ -121,7 +121,7 @@
 
 | Feature | Status | Notes |
 |---|---|---|
-| HTTP API | 🟡 | 171 official routes: 164 implemented + 7 partial + 0 missing; every partial is an explicit 4xx, never a fake success |
+| HTTP API | ✅ | 171 official routes: 171 implemented + 0 partial + 0 missing (`program/contracts/hive-api.json`); narrower semantics are documented per domain in `docs/API_COMPAT.md` and `program/reports/` |
 | SSE | ✅ | Per-session events replay + tail from the durable `events.jsonl`; chat deltas + colony events |
 | CLI | 🟡 | serve/colony/chat/worker/playbook/tracker; no skill/mcp/janitor |
 | Official Hive frontend (forked at `frontend/`, built here) | ✅ | Fork source + dist live in this repo; served at `/`; desktop chat verified end-to-end (Queen reply over SSE, last verified 2026-11-19 — not re-run: no model key in this environment); mobile official layout is desktop-first and squeezed |
@@ -135,7 +135,7 @@
 | Feature | Status | Notes |
 |---|---|---|
 | Multi-user / RBAC | ⬜ | Single user |
-| Secrets redaction | 🟡 | Env key not logged; no credential vault |
+| Secrets redaction | ✅ | The env model key is never logged; vault values are write-only over the API (`key_names`/`has_keys` only) and the vault file is 0600 |
 | Custom prompt library | ✅ | `hiveHome()/prompts/prompts.json`; create mints the id and normalizes skills/tags, delete is by id, list is newest first |
 | Agent delete / metadata | ✅ | An agent is a colony dir: soft delete sets `metadata.deleted`, `purge` removes `colonies/<name>` + `agents/<name>`, `PATCH` writes `icon` only |
 | Workspace/cwd binding | ✅ | Colony `workspace` or `PI_HIVE_WORKSPACE`; file/terminal tools scoped to it |
@@ -154,7 +154,7 @@ A feature is ✅ only when:
 
 ## Next milestones
 
-1. **API behavior**: close the 7 remaining partial rows (6 credential routes, 1 Claude Code transcript); route surface is complete.
+1. **API behavior**: done — all 171 official routes are implemented; the remaining work is depth (real MCP client, cloud team DB, screenshots) rather than route surface.
 2. **Memory reflection**: cooldown reflection and consolidation (Soul proposals exist).
 3. **MCP and browser/web tools**: load MCP servers; add browser/web tools.
 4. **Sentinel channels**: Telegram/Slack + escalation policy.

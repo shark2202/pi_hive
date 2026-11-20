@@ -65,6 +65,20 @@ import {
   writeSlot,
 } from "../../domain/config-store.js";
 import { readLlm as readQueenLlm, writeLlm as writeQueenLlm } from "../../domain/queen-state.js";
+import {
+  accountsByProvider,
+  adenConfig,
+  deleteCredential as vaultDeleteCredential,
+  deleteLocal as vaultDeleteLocal,
+  isSafeCredentialId,
+  listCredentials,
+  listLocal,
+  mergeAdenAccounts,
+  normalizeKeys,
+  saveCredential,
+  saveLocal,
+} from "../../domain/credential-vault.js";
+import { SessionStore } from "../sessions.js";
 import { parseMultipart } from "./sessions.js";
 import { buildCredentialSpecs, buildFeatures, buildLLMConfig, buildModelsCatalogue } from "./config.js";
 
@@ -417,9 +431,34 @@ async function probeEndpointModels(name) {
 }
 
 /** The credential vault is empty, so every id is missing (never a secret echo). */
+/**
+ * `GET /api/credentials/:credential` — the stored credential plus its named
+ * accounts. Field names are listed; no value is ever returned.
+ */
 async function getCredential(args = {}) {
   const id = typeof args.params?.credential === "string" ? args.params.credential : "";
-  return notFound(`Credential '${id}' not found`);
+  const stored = listCredentials().find((entry) => entry.credential_id === id) || null;
+  const accounts = listLocal(id);
+  if (!stored && accounts.length === 0) return notFound(`Credential '${id}' not found`);
+  return {
+    status: 200,
+    body: {
+      credential_id: id,
+      credential_type: accounts.some((entry) => entry.account) ? "local" : "api_key",
+      key_names: stored?.has_keys ?? accounts[0]?.has_keys ?? [],
+      created_at: stored?.updated_at ?? accounts[0]?.created_at ?? null,
+      updated_at: stored?.updated_at ?? accounts[0]?.created_at ?? null,
+      accounts: accounts.map((entry) => ({
+        provider: id,
+        alias: entry.account,
+        identity: { account: entry.account },
+        source: "local",
+        credential_id: id,
+        // Presence only: the field names, never their values.
+        has_keys: entry.has_keys,
+      })),
+    },
+  };
 }
 
 async function getOauthStatus() {
@@ -910,55 +949,167 @@ function deleteEndpoint(args = {}) {
   return { status: 200, body: { deleted: name } };
 }
 
-function postCredential(args = {}) {
-  return unsupported(
-    routeOf(args, "/api/credentials"),
-    "credentials.store",
-    "pi_hive has no credential vault: model keys come from the environment (PI_HIVE_API_KEY), never from a stored credential",
-  );
+/**
+ * `POST /api/credentials` — save (merge) the fields of one credential into
+ * `hiveHome()/credentials/vault.json` (0600). The response says what exists,
+ * never a value.
+ */
+async function postCredential(args = {}) {
+  const route = routeOf(args, "/api/credentials");
+  const parsed = await readJson(args.req ?? {});
+  const body = parsed.ok ? parsed.value : null;
+  const credentialId = typeof body?.credential_id === "string" ? body.credential_id.trim() : "";
+  if (!isSafeCredentialId(credentialId)) {
+    return invalidRequest(route, "credential_id must be 1-128 characters of letters, digits, dot, dash, colon or underscore");
+  }
+  const normalized = normalizeKeys(body?.keys);
+  if (normalized.error) return invalidRequest(route, normalized.error);
+  saveCredential(credentialId, normalized.keys);
+  return { status: 200, body: { saved: credentialId } };
 }
 
+/** `DELETE /api/credentials/:credential`. */
 function deleteCredential(args = {}) {
   const id = typeof args.params?.credential === "string" ? args.params.credential : "";
-  return unsupported(
-    routeOf(args, `/api/credentials/${id}`),
-    "credentials.store",
-    "pi_hive has no credential vault, so there is no stored credential to delete; keys come from the environment",
-  );
+  if (!isSafeCredentialId(id)) return notFound(`No credential '${id}'`);
+  if (!vaultDeleteCredential(id)) return notFound(`No credential '${id}'`);
+  return { status: 200, body: { deleted: true } };
 }
 
-function postLocalCredential(args = {}) {
-  return unsupported(
-    routeOf(args, "/api/credentials/local"),
-    "credentials.local",
-    "pi_hive has no local credential registry: it cannot store named accounts or aliases",
-  );
+/** `POST /api/credentials/local` — a named local account (provider + alias). */
+async function postLocalCredential(args = {}) {
+  const route = routeOf(args, "/api/credentials/local");
+  const parsed = await readJson(args.req ?? {});
+  const body = parsed.ok ? parsed.value : null;
+  const credentialId = typeof body?.credential_id === "string" ? body.credential_id.trim() : "";
+  if (!isSafeCredentialId(credentialId)) {
+    return invalidRequest(route, "credential_id must be 1-128 characters of letters, digits, dot, dash, colon or underscore");
+  }
+  const account = typeof body?.account === "string" ? body.account.trim() : "";
+  if (account && !/^[A-Za-z0-9][A-Za-z0-9._:@-]{0,127}$/.test(account)) {
+    return invalidRequest(route, "account must be 1-128 characters of letters, digits, dot, dash, colon, at or underscore");
+  }
+  const normalized = normalizeKeys(body?.keys);
+  if (normalized.error) return invalidRequest(route, normalized.error);
+  const saved = saveLocal({ credentialId, alias: account, account, keys: normalized.keys });
+  return {
+    status: 200,
+    body: {
+      saved: saved.saved,
+      status: saved.status,
+      identity: saved.identity,
+      // No upstream health check runs here, so validity is honestly unknown.
+      valid: null,
+      message: "stored locally; no health check was run",
+    },
+  };
 }
 
+/** `DELETE /api/credentials/local/:credential/:alias`. */
 function deleteLocalCredential(args = {}) {
   const id = typeof args.params?.credential === "string" ? args.params.credential : "";
   const alias = typeof args.params?.alias === "string" ? args.params.alias : "";
-  return unsupported(
-    routeOf(args, `/api/credentials/local/${id}/${alias}`),
-    "credentials.local",
-    "pi_hive has no local credential registry, so there is no local account to delete",
-  );
+  if (!vaultDeleteLocal(id, alias)) return notFound(`No local account '${alias}' for '${id}'`);
+  return { status: 200, body: { deleted: true } };
 }
 
-function postCredentialResync(args = {}) {
-  return unsupported(
-    routeOf(args, "/api/credentials/resync"),
-    "credentials.resync",
-    "pi_hive has no Aden credential sync or credential store to resynchronise",
-  );
+/**
+ * `POST /api/credentials/resync` — pull the Aden account list.
+ *
+ * Without `PI_HIVE_ADEN_URL` + `PI_HIVE_ADEN_KEY` there is nothing to sync, and
+ * the route says so instead of reporting a fake success.
+ */
+async function postCredentialResync(args = {}) {
+  const route = routeOf(args, "/api/credentials/resync");
+  const aden = adenConfig();
+  if (!aden) {
+    return invalidRequest(
+      route,
+      "Aden sync is not configured: set PI_HIVE_ADEN_URL and PI_HIVE_ADEN_KEY to resynchronise remote accounts",
+    );
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10000);
+  try {
+    const response = await fetch(`${aden.base}/v1/credentials/accounts`, {
+      headers: { authorization: `Bearer ${aden.key}` },
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      return {
+        status: 502,
+        body: { error: `Aden answered ${response.status}`, synced: false, accounts_by_provider: accountsByProvider() },
+      };
+    }
+    const payload = await response.json().catch(() => null);
+    const accounts = Array.isArray(payload?.accounts) ? payload.accounts : [];
+    const merged = mergeAdenAccounts(accounts);
+    return { status: 200, body: { synced: merged.synced, accounts_by_provider: merged.accounts_by_provider } };
+  } catch (err) {
+    const reason = err?.name === "AbortError" ? "Aden did not answer within 10 s" : err?.message || String(err);
+    return {
+      status: 502,
+      body: { error: `could not reach Aden: ${reason}`, synced: false, accounts_by_provider: accountsByProvider() },
+    };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
-function postCredentialForm(args = {}) {
-  return unsupported(
-    routeOf(args, "/api/sessions/:session/credential-form"),
-    "sessions.credential-form",
-    "pi_hive has no credential vault or parked agent sessions, so a secure credential form cannot be submitted",
-  );
+/**
+ * `POST /api/sessions/:session/credential-form` — the secure form a queen pops
+ * when an agent needs a key. Saving stores the secret in the vault and clears
+ * the session's park flag; cancelling just clears it. Either way the session is
+ * unblocked, which is what the client's `resumed` flag reports.
+ */
+async function postCredentialForm(args = {}) {
+  const route = routeOf(args, "/api/sessions/:session/credential-form");
+  const sessionId = typeof args.params?.session === "string" ? args.params.session : "";
+  const parsed = await readJson(args.req ?? {});
+  const body = parsed.ok ? parsed.value : null;
+  const status = body?.status === "cancelled" ? "cancelled" : body?.status === "saved" ? "saved" : null;
+  if (!status) return invalidRequest(route, "status must be 'saved' or 'cancelled'");
+
+  const store = new SessionStore();
+  const record = store.get(sessionId);
+  if (!record) return notFound(`Session '${sessionId}' not found`);
+
+  let saved = null;
+  if (status === "saved") {
+    const credentialId = typeof body?.credential_id === "string" ? body.credential_id.trim() : "";
+    if (!isSafeCredentialId(credentialId)) return invalidRequest(route, "credential_id is required when saving");
+    const normalized = normalizeKeys(body?.keys);
+    if (normalized.error) return invalidRequest(route, normalized.error);
+    const account = typeof body?.account === "string" ? body.account.trim() : "";
+    if (account) saveLocal({ credentialId, alias: account, account, keys: normalized.keys });
+    else saveCredential(credentialId, normalized.keys);
+    saved = credentialId;
+  }
+
+  // Clear the park so the loop can continue; the correlation id is the record.
+  store.update(sessionId, {
+    parked: false,
+    park_reason: null,
+    credential_form: {
+      correlation_id: typeof body?.correlation_id === "string" ? body.correlation_id : null,
+      credential_id: saved,
+      status,
+      at: new Date().toISOString(),
+    },
+  });
+  store.appendEvent(sessionId, {
+    type: status === "saved" ? "credential_saved" : "credential_cancelled",
+    data: { credential_id: saved, correlation_id: body?.correlation_id ?? null },
+  });
+
+  return {
+    status: 200,
+    body: {
+      ...(saved ? { saved } : {}),
+      resumed: true,
+      status,
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -992,15 +1143,15 @@ const ROUTE_TABLE = [
   ["PUT", "/api/models/endpoints/:endpoint", putEndpoint, "adds or edits a named endpoint; the key is stored 0600 and never echoed"],
   ["DELETE", "/api/models/endpoints/:endpoint", deleteEndpoint, "removes a stored endpoint; 404 for unknown names"],
   ["GET", "/api/credentials/:credential", getCredential, "official 404: pi_hive has no credential vault"],
-  ["POST", "/api/credentials", postCredential, "400: pi_hive has no credential vault (keys are env-only)"],
-  ["DELETE", "/api/credentials/:credential", deleteCredential, "400: pi_hive has no credential vault"],
-  ["POST", "/api/credentials/local", postLocalCredential, "400: pi_hive has no local credential registry"],
-  ["DELETE", "/api/credentials/local/:credential/:alias", deleteLocalCredential, "400: pi_hive has no local credential registry"],
+  ["POST", "/api/credentials", postCredential, "merges one credential into hiveHome()/credentials/vault.json (0600); values are never echoed"],
+  ["DELETE", "/api/credentials/:credential", deleteCredential, "deletes a stored credential; 404 for an unknown id"],
+  ["POST", "/api/credentials/local", postLocalCredential, "stores a named local account; validity stays null (no health check runs)"],
+  ["DELETE", "/api/credentials/local/:credential/:alias", deleteLocalCredential, "deletes one named local account; 404 when absent"],
   ["POST", "/api/credentials/check-agent", postCheckAgent, "empty requirement list; the only model key is process-wide"],
-  ["POST", "/api/credentials/resync", postCredentialResync, "400: pi_hive has no Aden credential sync"],
+  ["POST", "/api/credentials/resync", postCredentialResync, "pulls the Aden account list when PI_HIVE_ADEN_URL/KEY are set; 400 otherwise"],
   ["GET", "/api/credentials/oauth-status", getOauthStatus, "official OAuth status; no providers, real Aden-key bit"],
   ["POST", "/api/credentials/validate-key", postValidateKey, "local check against the configured pi_hive key; no network"],
-  ["POST", "/api/sessions/:session/credential-form", postCredentialForm, "400: pi_hive has no credential vault or parked sessions"],
+  ["POST", "/api/sessions/:session/credential-form", postCredentialForm, "saves the secret into the vault and unparks the session (or cancels)"],
 ];
 
 /** Method + path for every route, for contract checks and tests. */

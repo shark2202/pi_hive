@@ -240,7 +240,7 @@ const EXPECTED_STATUS = new Map([
   ["POST /api/queen/:queen/soul/proposals/:proposal/probe", "implemented"],
   ["POST /api/queen/:queen/soul/reflect", "implemented"],
   ["GET /api/claude-code-queens", "implemented"],
-  ["GET /api/claude-code-queens/:queen/conversations/:conversation", "partial"],
+  ["GET /api/claude-code-queens/:queen/conversations/:conversation", "implemented"],
 ]);
 
 test("registers exactly the 28 official routes with honest statuses", () => {
@@ -260,8 +260,8 @@ test("registers exactly the 28 official routes with honest statuses", () => {
   }
 
   const counts = registry.counts();
-  assert.equal(counts.implemented, 27);
-  assert.equal(counts.partial, 1);
+  assert.equal(counts.implemented, 28);
+  assert.equal(counts.partial, 0);
   assert.equal(counts.missing, 0);
   assert.equal(counts.total, 28);
 
@@ -1080,21 +1080,76 @@ test("soul probe asks the model when a runtime is reachable, and reflect stores 
   assert.equal(proposal.source, "reflect");
 });
 
-test("Claude Code queens are a valid empty list and transcripts an explicit 404", async () => {
-  seedWorld();
+test("Claude Code queens list what is configured and serve the real transcript", async () => {
+  const home = seedWorld();
+  process.env.CLAUDE_CONFIG_DIR = path.join(home, "claude");
+  const project = path.join(home, "claude", "projects", "-work-hive");
+  fs.mkdirSync(project, { recursive: true });
+
   const registry = makeRegistry();
-
-  const list = await call(registry, "GET", "/api/claude-code-queens");
+  let list = await call(registry, "GET", "/api/claude-code-queens");
   assert.equal(list.status, 200);
-  assert.deepEqual(list.body, { queens: [] });
+  assert.deepEqual(list.body, { queens: [] }, "nothing is configured yet");
 
-  const transcript = await call(
-    registry,
-    "GET",
-    "/api/claude-code-queens/claude_reviewer/conversations/sess_123",
+  // Configure one queen and give Claude Code a transcript for her.
+  fs.writeFileSync(
+    path.join(home, "configuration.json"),
+    JSON.stringify({
+      queen_mail: {
+        claude_code: {
+          claude_reviewer: { name: "Reviewer", title: "Code reviewer", model: "claude-sonnet", auth: "subscription" },
+        },
+      },
+    }),
   );
-  assert.equal(transcript.status, 404);
-  assert.equal(transcript.body.type, "unsupported");
-  assert.match(transcript.body.error, /no Claude Code queen integration/);
-  assert.equal(transcript.body.conversation_id, "sess_123");
+  const lines = [
+    { timestamp: "2026-11-20T10:00:00.000Z", message: { role: "user", content: "<hive_letter>Review PR 42</hive_letter>" } },
+    { timestamp: "2026-11-20T10:00:01.000Z", message: { role: "assistant", content: [
+      { type: "text", text: "Looking now." },
+      { type: "tool_use", name: "Read", input: { file_path: "src/a.js" } },
+    ] } },
+    { timestamp: "2026-11-20T10:00:02.000Z", message: { role: "user", content: [
+      { type: "tool_result", content: "file body", is_error: false },
+    ] } },
+    { timestamp: "2026-11-20T10:00:03.000Z", message: { role: "user", content: [
+      { type: "tool_result", content: "boom", is_error: true },
+    ] } },
+  ];
+  fs.writeFileSync(path.join(project, "sess_123.jsonl"), lines.map((line) => JSON.stringify(line)).join("\n"));
+
+  list = await call(registry, "GET", "/api/claude-code-queens");
+  assert.equal(list.body.queens.length, 1);
+  const queen = list.body.queens[0];
+  assert.equal(queen.id, "claude_reviewer");
+  assert.equal(queen.name, "Reviewer");
+  assert.equal(queen.auth, "subscription");
+  assert.equal(queen.model, "claude-sonnet");
+  assert.equal(queen.conversations[0].session_id, "sess_123");
+  assert.equal(queen.conversations[0].peer_name, "Reviewer");
+  assert.equal(queen.conversations[0].running, false);
+
+  const transcript = await call(registry, "GET", "/api/claude-code-queens/claude_reviewer/conversations/sess_123");
+  assert.equal(transcript.status, 200);
+  assert.deepEqual(
+    transcript.body.entries.map((entry) => [entry.kind, entry.tool || null, entry.error || false]),
+    [
+      ["letter", null, false],
+      ["text", null, false],
+      ["tool", "Read", false],
+      ["result", null, false],
+      ["result", null, true],
+    ],
+  );
+  assert.match(transcript.body.entries[2].text, /src\/a\.js/);
+  assert.equal(transcript.body.entries[4].text, "boom");
+
+  const unknownQueen = await call(registry, "GET", "/api/claude-code-queens/nope/conversations/sess_123");
+  assert.equal(unknownQueen.status, 404);
+  assert.match(unknownQueen.body.error, /No Claude Code queen 'nope'/);
+
+  const unknownConversation = await call(registry, "GET", "/api/claude-code-queens/claude_reviewer/conversations/sess_nope");
+  assert.equal(unknownConversation.status, 404);
+  assert.match(unknownConversation.body.error, /No transcript/);
+
+  delete process.env.CLAUDE_CONFIG_DIR;
 });

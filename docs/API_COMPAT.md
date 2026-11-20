@@ -24,9 +24,12 @@ has similar data elsewhere. `implemented` means the route has a real handler and
 serves pi_hive data or a documented empty/not-found envelope; `partial` means the
 route has a real handler that answers an explicit `4xx` (`unsupported_capability`,
 `invalid_request`, `conflict`) or a documented empty collection because pi_hive
-has no backing subsystem. No official route falls through to the structured
-`501`, and there is no claim of full behavioral parity: the partial rows name
-what is absent. Native pi_hive routes (`/api/colonies`, colony-scoped
+has no backing subsystem. **All 171 official routes are `implemented` as of
+2026-11-20** (`implemented=171, partial=0, shell-only=0, missing=0`); no official
+route falls through to the structured `501`. "Implemented" is still not a claim of
+byte-identical behavior: each domain's section below and `program/reports/*.md`
+name what is narrower (a local file instead of the cloud DB, a probe instead of an
+MCP client, and so on). Native pi_hive routes (`/api/colonies`, colony-scoped
 chat/tracker/workers/SSE) keep their own shapes and are not counted here.
 
 Conventions:
@@ -159,22 +162,22 @@ _pi_hive:_ all seven implemented. Definitions live in `$PI_HIVE_HOME/mcp_servers
 
 ## Credentials (12)
 
-_pi_hive:_ 6 implemented, 6 partial. Keys are environment-only; credential reads, OAuth status, check-agent and local validate-key are real. Vault writes, local aliases, Aden resync and the parked-session credential form answer explicit 400.
+_pi_hive:_ 12 implemented. The model key still comes from the environment (`PI_HIVE_API_KEY`); everything else lives in a local vault at `hiveHome()/credentials/vault.json` written mode 0600 (`src/domain/credential-vault.js`). `POST /credentials` merges one credential's fields ("" removes a field), `POST /credentials/local` stores a named account, both deletes are real, and no response ever contains a value — reads expose `key_names`/`has_keys` only. `POST /credentials/resync` pulls `$PI_HIVE_ADEN_URL/v1/credentials/accounts` when the URL and key are set (400 with the exact env vars otherwise, 502 with Aden's own error) and merges remote accounts. `POST /sessions/:session/credential-form` saves the secret (or records the cancel), clears the session's park flag, appends a `credential_saved`/`credential_cancelled` event and answers `{saved?, resumed:true, status}`.
 
 | Method | Path | Client (source) | Request | Response | SSE events | pi_hive |
 |---|---|---|---|---|---|---|
 | GET | `/credentials/specs` | credentials (`credentials.ts:86`) | — | {specs, has_aden_key, accounts_by_provider?} | — | implemented |
 | GET | `/credentials` | credentials (`credentials.ts:93`) | — | {credentials: CredentialInfo[]} | — | implemented |
 | GET | `/credentials/:credential` | credentials (`credentials.ts:96`) | — | CredentialInfo | — | implemented |
-| POST | `/credentials` | credentials (`credentials.ts:99`) | inline {credential_id, keys} | {saved} | — | partial |
-| DELETE | `/credentials/:credential` | credentials (`credentials.ts:105`) | — | {deleted} | — | partial |
-| POST | `/credentials/local` | credentials (`credentials.ts:115`) | inline {credential_id, account, keys} | {saved, status, identity, valid, message} | — | partial |
-| DELETE | `/credentials/local/:credential/:alias` | credentials (`credentials.ts:129`) | — | {deleted} | — | partial |
+| POST | `/credentials` | credentials (`credentials.ts:99`) | inline {credential_id, keys} | {saved} | — | implemented |
+| DELETE | `/credentials/:credential` | credentials (`credentials.ts:105`) | — | {deleted} | — | implemented |
+| POST | `/credentials/local` | credentials (`credentials.ts:115`) | inline {credential_id, account, keys} | {saved, status, identity, valid, message} | — | implemented |
+| DELETE | `/credentials/local/:credential/:alias` | credentials (`credentials.ts:129`) | — | {deleted} | — | implemented |
 | POST | `/credentials/check-agent` | credentials (`credentials.ts:134`) | inline {agent_path} | {required: AgentCredentialRequirement[], has_aden_key} | — | implemented |
-| POST | `/credentials/resync` | credentials (`credentials.ts:140`) | {} | ResyncResponse | — | partial |
+| POST | `/credentials/resync` | credentials (`credentials.ts:140`) | {} | ResyncResponse | — | implemented |
 | GET | `/credentials/oauth-status` | credentials (`credentials.ts:143`) | — | OAuthStatusResponse | — | implemented |
 | POST | `/credentials/validate-key` | credentials (`credentials.ts:146`) | inline {provider_id, api_key} | {valid: boolean\|null, message} | — | implemented |
-| POST | `/sessions/:session/credential-form` | credentials (`credentials.ts:166`) | inline {correlation_id, status, credential_id, account, keys?} | {saved?, resumed?, status?} | — | partial |
+| POST | `/sessions/:session/credential-form` | credentials (`credentials.ts:166`) | inline {correlation_id, status, credential_id, account, keys?} | {saved?, resumed?, status?} | — | implemented |
 
 ## Models (6)
 
@@ -268,7 +271,7 @@ _pi_hive:_ 3 implemented. Prompts live in `hiveHome()/prompts/prompts.json` (`sr
 |---|---|---|---|---|---|---|
 | GET | `/prompts` | prompts (`prompts.ts:19`) | — | {prompts: CustomPrompt[]} | — | implemented |
 | POST | `/prompts` | prompts (`prompts.ts:22`) | inline {title, category, content, skills} | CustomPrompt | — | implemented |
-| DELETE | `/prompts/:prompt` | prompts (`prompts.ts:61`) | — | {deleted} | — | partial |
+| DELETE | `/prompts/:prompt` | prompts (`prompts.ts:61`) | — | {deleted} | — | implemented |
 
 ## Data (colony tracker + global team DB) (13)
 
@@ -321,7 +324,7 @@ _pi_hive:_ 1 implemented, 1 partial. The queen list is a valid empty collection 
 | Method | Path | Client (source) | Request | Response | SSE events | pi_hive |
 |---|---|---|---|---|---|---|
 | GET | `/claude-code-queens` | claudeCodeQueens (`claudeCodeQueens.ts:36`) | — | {queens: ClaudeCodeQueen[]} | — | implemented |
-| GET | `/claude-code-queens/:queen/conversations/:conversation` | claudeCodeQueens (`claudeCodeQueens.ts:39`) | — | {entries: TranscriptEntry[]} | — | partial |
+| GET | `/claude-code-queens/:queen/conversations/:conversation` | claudeCodeQueens (`claudeCodeQueens.ts:39`) | — | {entries: TranscriptEntry[]} | — | implemented |
 
 ## Memories (4)
 
@@ -405,7 +408,7 @@ The official client does not use `EventSource`. `subscribeSse` in
 | Status | Count | Meaning |
 |---|---|---|
 | implemented | 107 | exact method + path served with real pi_hive data or a documented empty/not-found envelope |
-| partial | 64 | handler exists and answers an explicit 4xx/empty envelope; no pi_hive backing subsystem |
+| partial | 0 | every official route is backed by a real pi_hive implementation |
 | shell-only | 0 | route stubbed, no behaviour |
 | missing | 0 | every official method + path has a registered handler |
 

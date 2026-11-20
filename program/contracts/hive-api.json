@@ -43,7 +43,7 @@
     "derivation": "api.get/post/put/patch/delete/upload + apiUrl + subscribeSse call sites, plus the exported types in src/api/types.ts"
   },
   "generated_at": "2026-11-19T10:10:50.368Z",
-  "revised_at": "2026-11-20T09:14:07+08:00",
+  "revised_at": "2026-11-20T09:17:43+08:00",
   "revision": "1.3.0",
   "domains": [
     "colonies",
@@ -93,8 +93,8 @@
       "workers": 7
     },
     "by_status": {
-      "implemented": 164,
-      "partial": 7,
+      "implemented": 171,
+      "partial": 0,
       "shell-only": 0,
       "missing": 0
     },
@@ -177,8 +177,8 @@
       "response_type": "{entries: TranscriptEntry[]}",
       "sse": false,
       "sse_events": [],
-      "pi_hive_status": "partial",
-      "notes": "Partial compatibility: no Claude Code transcripts; explicit 404.",
+      "pi_hive_status": "implemented",
+      "notes": "the JSONL transcript of a configured queen; 404 for an unknown queen or conversation",
       "source": "claudeCodeQueens.ts:39",
       "query": []
     },
@@ -819,8 +819,8 @@
       "response_type": "{saved}",
       "sse": false,
       "sse_events": [],
-      "pi_hive_status": "partial",
-      "notes": "Partial compatibility: 400: pi_hive has no credential vault (keys are env-only). explicit 400 unsupported_capability: pi_hive has no backing store for this write.",
+      "pi_hive_status": "implemented",
+      "notes": "merges one credential into hiveHome()/credentials/vault.json (0600); values are never echoed",
       "source": "credentials.ts:99",
       "query": []
     },
@@ -834,8 +834,8 @@
       "response_type": "{deleted}",
       "sse": false,
       "sse_events": [],
-      "pi_hive_status": "partial",
-      "notes": "Partial compatibility: 400: pi_hive has no credential vault. explicit 400 unsupported_capability: pi_hive has no backing store for this write.",
+      "pi_hive_status": "implemented",
+      "notes": "deletes a stored credential; 404 for an unknown id",
       "source": "credentials.ts:105",
       "query": []
     },
@@ -849,8 +849,8 @@
       "response_type": "{saved, status, identity, valid, message}",
       "sse": false,
       "sse_events": [],
-      "pi_hive_status": "partial",
-      "notes": "Partial compatibility: 400: pi_hive has no local credential registry. explicit 400 unsupported_capability: pi_hive has no backing store for this write.",
+      "pi_hive_status": "implemented",
+      "notes": "stores a named local account; validity stays null (no health check runs)",
       "source": "credentials.ts:115",
       "query": []
     },
@@ -864,8 +864,8 @@
       "response_type": "{deleted}",
       "sse": false,
       "sse_events": [],
-      "pi_hive_status": "partial",
-      "notes": "Partial compatibility: 400: pi_hive has no local credential registry. explicit 400 unsupported_capability: pi_hive has no backing store for this write.",
+      "pi_hive_status": "implemented",
+      "notes": "deletes one named local account; 404 when absent",
       "source": "credentials.ts:129",
       "query": []
     },
@@ -894,8 +894,8 @@
       "response_type": "ResyncResponse",
       "sse": false,
       "sse_events": [],
-      "pi_hive_status": "partial",
-      "notes": "Partial compatibility: 400: pi_hive has no Aden credential sync. explicit 400 unsupported_capability: pi_hive has no backing store for this write.",
+      "pi_hive_status": "implemented",
+      "notes": "pulls the Aden account list when PI_HIVE_ADEN_URL/KEY are set; 400 otherwise",
       "source": "credentials.ts:140",
       "query": []
     },
@@ -939,8 +939,8 @@
       "response_type": "{saved?, resumed?, status?}",
       "sse": false,
       "sse_events": [],
-      "pi_hive_status": "partial",
-      "notes": "Partial compatibility: 400: pi_hive has no credential vault or parked sessions. explicit 400 unsupported_capability: pi_hive has no backing store for this write.",
+      "pi_hive_status": "implemented",
+      "notes": "saves the secret into the vault and unparks the session (or cancels)",
       "source": "credentials.ts:166",
       "query": []
     },

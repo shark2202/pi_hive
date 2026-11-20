@@ -485,12 +485,8 @@ test("request bodies are read from a Node request stream, like the server passes
 // --- Mutations: explicit 4xx, never 501 or fake success ----------------------
 
 const UNSUPPORTED_MUTATIONS = [
-  ["POST", "/api/credentials"],
-  ["DELETE", "/api/credentials/notion"],
-  ["POST", "/api/credentials/local"],
-  ["DELETE", "/api/credentials/local/notion/acct"],
-  ["POST", "/api/credentials/resync"],
-  ["POST", "/api/sessions/session-1/credential-form"],
+  // Every write that used to be a refusal is implemented now; nothing here may
+  // answer 400 unsupported_capability any more (see the credential tests below).
 ];
 
 test("every unsupported mutation answers 400 with an explicit reason", async () => {
@@ -881,4 +877,154 @@ test("an empty PI_HIVE_HOME does not change any of these answers", async () => {
     const library = await call(registry, "GET", "/api/config/provider-library");
     assert.deepEqual(library.body, { library: {} });
   });
+});
+
+// --- Credentials: a real local vault ---------------------------------------
+
+test("credential saves round-trip through the vault without ever echoing a value", async () => {
+  const registry = makeRegistry();
+  const saved = await call(registry, "POST", "/api/credentials", {
+    body: { credential_id: "provider_openai", keys: { api_key: "vault-secret-value" } },
+  });
+  assert.equal(saved.status, 200);
+  assert.deepEqual(saved.body, { saved: "provider_openai" });
+  assert.equal(JSON.stringify(saved.body).includes("vault-secret-value"), false);
+
+  const vaultFile = path.join(process.env.PI_HIVE_HOME, "credentials", "vault.json");
+  const stored = JSON.parse(fs.readFileSync(vaultFile, "utf8"));
+  assert.equal(stored.credentials.provider_openai.keys.api_key, "vault-secret-value");
+  if (process.platform !== "win32") assert.equal(fs.statSync(vaultFile).mode & 0o777, 0o600);
+
+  // A second save merges fields instead of replacing them, and "" removes one.
+  await call(registry, "POST", "/api/credentials", {
+    body: { credential_id: "provider_openai", keys: { org_id: "org-1" } },
+  });
+  let file = JSON.parse(fs.readFileSync(vaultFile, "utf8"));
+  assert.deepEqual(Object.keys(file.credentials.provider_openai.keys).sort(), ["api_key", "org_id"]);
+  await call(registry, "POST", "/api/credentials", {
+    body: { credential_id: "provider_openai", keys: { api_key: "" } },
+  });
+  file = JSON.parse(fs.readFileSync(vaultFile, "utf8"));
+  assert.deepEqual(Object.keys(file.credentials.provider_openai.keys), ["org_id"]);
+
+  const missingId = await call(registry, "POST", "/api/credentials", { body: { keys: { api_key: "x" } } });
+  assert.equal(missingId.status, 400);
+  const badKeys = await call(registry, "POST", "/api/credentials", {
+    body: { credential_id: "provider_openai", keys: "not-an-object" },
+  });
+  assert.equal(badKeys.status, 400);
+
+  const deleted = await call(registry, "DELETE", "/api/credentials/provider_openai");
+  assert.deepEqual(deleted.body, { deleted: true });
+  assert.equal((await call(registry, "DELETE", "/api/credentials/provider_openai")).status, 404);
+});
+
+test("local accounts are named, listable and deletable", async () => {
+  const registry = makeRegistry();
+  const saved = await call(registry, "POST", "/api/credentials/local", {
+    body: { credential_id: "notion", account: "work", keys: { token: "notion-secret" } },
+  });
+  assert.equal(saved.status, 200);
+  assert.equal(saved.body.saved, "notion");
+  assert.equal(saved.body.status, "saved");
+  assert.deepEqual(saved.body.identity, { account: "work" });
+  assert.equal(saved.body.valid, null, "no health check runs, so validity is unknown");
+  assert.match(saved.body.message, /no health check/);
+  assert.equal(JSON.stringify(saved.body).includes("notion-secret"), false);
+
+  // The listing route reads the same vault.
+  const listed = await call(registry, "GET", "/api/credentials/notion");
+  assert.equal(listed.status, 200);
+  assert.deepEqual(listed.body.accounts.map((entry) => entry.alias), ["work"]);
+  assert.deepEqual(listed.body.accounts[0].has_keys, ["token"]);
+
+  const deleted = await call(registry, "DELETE", "/api/credentials/local/notion/work");
+  assert.deepEqual(deleted.body, { deleted: true });
+  assert.equal((await call(registry, "DELETE", "/api/credentials/local/notion/work")).status, 404);
+});
+
+test("resync is explicit without Aden and real with it", async () => {
+  const registry = makeRegistry();
+  delete process.env.PI_HIVE_ADEN_URL;
+  delete process.env.PI_HIVE_ADEN_KEY;
+
+  const unconfigured = await call(registry, "POST", "/api/credentials/resync");
+  assert.equal(unconfigured.status, 400);
+  assert.match(unconfigured.body.error, /Aden sync is not configured/);
+
+  process.env.PI_HIVE_ADEN_URL = "https://aden.test";
+  process.env.PI_HIVE_ADEN_KEY = "aden-key";
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async (url, options = {}) => {
+      assert.match(String(url), /https:\/\/aden\.test\/v1\/credentials\/accounts/);
+      assert.equal(options.headers.authorization, "Bearer aden-key");
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ accounts: [{ credential_id: "alpha", account: "remote-1" }, { credential_id: "bad id" }] }),
+      };
+    };
+    const synced = await call(registry, "POST", "/api/credentials/resync");
+    assert.equal(synced.status, 200);
+    assert.equal(synced.body.synced, true);
+    assert.deepEqual(synced.body.accounts_by_provider.alpha.map((entry) => entry.account), ["remote-1"]);
+
+    globalThis.fetch = async () => ({ ok: false, status: 503, json: async () => ({}) });
+    const failed = await call(registry, "POST", "/api/credentials/resync");
+    assert.equal(failed.status, 502);
+    assert.match(failed.body.error, /Aden answered 503/);
+    assert.equal(failed.body.synced, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+    delete process.env.PI_HIVE_ADEN_URL;
+    delete process.env.PI_HIVE_ADEN_KEY;
+  }
+});
+
+test("the credential form stores the secret and unparks the session", async () => {
+  const registry = makeCombinedRegistry();
+  const { createColony } = await import("../../src/domain/colony.js");
+  createColony({ name: "acme", goal: "prove the credential form" });
+  const { SessionStore } = await import("../../src/compat/sessions.js");
+  const store = new SessionStore();
+  const session = store.create({ colonyId: "acme", queenId: "queen_tech" });
+  store.update(session.session_id, { parked: true, park_reason: "needs a key" });
+
+  const badStatus = await call(registry, "POST", `/api/sessions/${session.session_id}/credential-form`, {
+    body: { status: "maybe" },
+  });
+  assert.equal(badStatus.status, 400);
+
+  const unknown = await call(registry, "POST", "/api/sessions/sess-nope/credential-form", {
+    body: { status: "cancelled" },
+  });
+  assert.equal(unknown.status, 404);
+
+  const saved = await call(registry, "POST", `/api/sessions/${session.session_id}/credential-form`, {
+    body: {
+      correlation_id: "corr-1",
+      status: "saved",
+      credential_id: "notion",
+      account: "work",
+      keys: { token: "form-secret" },
+    },
+  });
+  assert.equal(saved.status, 200);
+  assert.equal(saved.body.saved, "notion");
+  assert.equal(saved.body.resumed, true);
+  assert.equal(saved.body.status, "saved");
+
+  const after = store.get(session.session_id);
+  assert.equal(after.parked, false);
+  assert.equal(after.credential_form.correlation_id, "corr-1");
+  const file = path.join(process.env.PI_HIVE_HOME, "credentials", "vault.json");
+  assert.match(fs.readFileSync(file, "utf8"), /form-secret/);
+
+  const cancelled = await call(registry, "POST", `/api/sessions/${session.session_id}/credential-form`, {
+    body: { correlation_id: "corr-2", status: "cancelled" },
+  });
+  assert.equal(cancelled.status, 200);
+  assert.equal(cancelled.body.resumed, true);
+  assert.equal(store.get(session.session_id).credential_form.status, "cancelled");
 });
