@@ -43,7 +43,7 @@
     "derivation": "api.get/post/put/patch/delete/upload + apiUrl + subscribeSse call sites, plus the exported types in src/api/types.ts"
   },
   "generated_at": "2026-11-19T10:10:50.368Z",
-  "revised_at": "2026-11-20T08:49:39+08:00",
+  "revised_at": "2026-11-20T08:52:01+08:00",
   "revision": "1.3.0",
   "domains": [
     "colonies",
@@ -93,8 +93,8 @@
       "workers": 7
     },
     "by_status": {
-      "implemented": 139,
-      "partial": 32,
+      "implemented": 146,
+      "partial": 25,
       "shell-only": 0,
       "missing": 0
     },
@@ -1296,8 +1296,8 @@
       "response_type": "{servers: McpServer[]}",
       "sse": false,
       "sse_events": [],
-      "pi_hive_status": "partial",
-      "notes": "Partial compatibility: MCP server list from pi_hive's config store; servers are not loaded. Configuration-only registry at $PI_HIVE_HOME/mcp_servers.json. pi_hive does not implement an MCP client/loader.",
+      "pi_hive_status": "implemented",
+      "notes": "the stored MCP servers from $PI_HIVE_HOME/mcp_servers.json",
       "source": "mcp.ts:63",
       "query": []
     },
@@ -1311,8 +1311,8 @@
       "response_type": "{server: McpServer, hint}",
       "sse": false,
       "sse_events": [],
-      "pi_hive_status": "partial",
-      "notes": "Partial compatibility: Store an MCP server definition (not loaded by agents). Validation and persistence are real; tool loading is not implemented.",
+      "pi_hive_status": "implemented",
+      "notes": "validates and stores an MCP server definition (409 on a duplicate name)",
       "source": "mcp.ts:65",
       "query": []
     },
@@ -1326,8 +1326,8 @@
       "response_type": "{removed}",
       "sse": false,
       "sse_events": [],
-      "pi_hive_status": "partial",
-      "notes": "Partial compatibility: Remove a stored MCP server definition.",
+      "pi_hive_status": "implemented",
+      "notes": "removes a stored definition; built-ins are 400, unknown names 404",
       "source": "mcp.ts:67",
       "query": []
     },
@@ -1341,8 +1341,8 @@
       "response_type": "{name, enabled}",
       "sse": false,
       "sse_events": [],
-      "pi_hive_status": "partial",
-      "notes": "Partial compatibility: Enable a stored MCP server (no loader to apply it).",
+      "pi_hive_status": "implemented",
+      "notes": "persists enabled=true on a stored definition",
       "source": "mcp.ts:69",
       "query": []
     },
@@ -1356,8 +1356,8 @@
       "response_type": "{name, enabled}",
       "sse": false,
       "sse_events": [],
-      "pi_hive_status": "partial",
-      "notes": "Partial compatibility: Disable a stored MCP server.",
+      "pi_hive_status": "implemented",
+      "notes": "persists enabled=false on a stored definition",
       "source": "mcp.ts:69",
       "query": []
     },
@@ -1371,8 +1371,8 @@
       "response_type": "{name, mode, hint}",
       "sse": false,
       "sse_events": [],
-      "pi_hive_status": "partial",
-      "notes": "Partial compatibility: Set tools/cli mode on a stored MCP server.",
+      "pi_hive_status": "implemented",
+      "notes": "persists tools/cli mode on a stored definition",
       "source": "mcp.ts:74",
       "query": []
     },
@@ -1386,8 +1386,8 @@
       "response_type": "McpHealthResult",
       "sse": false,
       "sse_events": [],
-      "pi_hive_status": "partial",
-      "notes": "Partial compatibility: Explicit 400: pi_hive cannot health-check an MCP server it never loads.",
+      "pi_hive_status": "implemented",
+      "notes": "real reachability probe (PATH lookup, TCP/TLS connect, unix socket); result is persisted",
       "source": "mcp.ts:78",
       "query": []
     },

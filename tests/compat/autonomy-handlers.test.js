@@ -176,13 +176,13 @@ test("registers all 26 autonomy routes with honest statuses", () => {
   const registry = makeRegistry({});
 
   const expected = new Map([
-    ["GET /api/mcp/servers", ROUTE_STATUS.PARTIAL],
-    ["POST /api/mcp/servers", ROUTE_STATUS.PARTIAL],
-    ["DELETE /api/mcp/servers/:server", ROUTE_STATUS.PARTIAL],
-    ["POST /api/mcp/servers/:server/enable", ROUTE_STATUS.PARTIAL],
-    ["POST /api/mcp/servers/:server/disable", ROUTE_STATUS.PARTIAL],
-    ["POST /api/mcp/servers/:server/mode", ROUTE_STATUS.PARTIAL],
-    ["POST /api/mcp/servers/:server/health", ROUTE_STATUS.PARTIAL],
+    ["GET /api/mcp/servers", ROUTE_STATUS.IMPLEMENTED],
+    ["POST /api/mcp/servers", ROUTE_STATUS.IMPLEMENTED],
+    ["DELETE /api/mcp/servers/:server", ROUTE_STATUS.IMPLEMENTED],
+    ["POST /api/mcp/servers/:server/enable", ROUTE_STATUS.IMPLEMENTED],
+    ["POST /api/mcp/servers/:server/disable", ROUTE_STATUS.IMPLEMENTED],
+    ["POST /api/mcp/servers/:server/mode", ROUTE_STATUS.IMPLEMENTED],
+    ["POST /api/mcp/servers/:server/health", ROUTE_STATUS.IMPLEMENTED],
     ["GET /api/colony/:colony/notifications", ROUTE_STATUS.IMPLEMENTED],
     ["PUT /api/colony/:colony/notifications", ROUTE_STATUS.IMPLEMENTED],
     ["POST /api/colony/:colony/notifications/test", ROUTE_STATUS.IMPLEMENTED],
@@ -215,8 +215,8 @@ test("registers all 26 autonomy routes with honest statuses", () => {
   }
 
   assert.deepEqual(registry.counts(), {
-    implemented: 16,
-    partial: 10,
+    implemented: 23,
+    partial: 3,
     missing: 0,
     total: 26,
   });
@@ -231,7 +231,7 @@ test("registerAutonomyRoutes validates its registry", () => {
 // MCP
 // ---------------------------------------------------------------------------
 
-test("MCP server settings persist configuration and never fake a health check", async () => {
+test("MCP server settings persist, and health really probes reachability", async () => {
   useHome();
   const registry = makeRegistry();
 
@@ -335,14 +335,22 @@ test("MCP server settings persist configuration and never fake a health check", 
   result = await call(registry, "POST", "/api/mcp/servers/files/mode", { body: { mode: "nope" } });
   assert.equal(result.status, 400);
 
-  // Health is explicit, not a fake healthy.
+  // Health is a real probe of what it can actually check (reachability).
   result = await call(registry, "POST", "/api/mcp/servers/files/health");
-  assert.equal(result.status, 400);
+  assert.equal(result.status, 200);
   assert.equal(result.body.name, "files");
-  assert.equal(result.body.status, "unknown");
+  assert.equal(result.body.status, "healthy");
   assert.equal(result.body.tools, 0);
-  assert.equal(result.body.code, "integration_unavailable");
-  assert.match(result.body.error, /does not load MCP servers/);
+  assert.equal(result.body.error, null);
+  assert.match(result.body.detail, /command resolves to/);
+  assert.match(result.body.note, /loads no MCP tools/);
+  assert.ok(result.body.checked_at);
+
+  result = await call(registry, "GET", "/api/mcp/servers");
+  const probed = result.body.servers.find((server) => server.name === "files");
+  assert.equal(probed.last_health_status, "healthy");
+  assert.equal(probed.last_health_check_at, result.body.servers.find((s) => s.name === "files").last_health_check_at);
+  assert.ok(probed.last_health_check_at, "the probe result must be persisted");
 
   // Unknown server.
   for (const [method, routePath] of [
@@ -391,6 +399,40 @@ test("built-in MCP entries cannot be removed or toggled", async () => {
   assert.equal(result.status, 200);
   assert.equal(result.body.servers[0].removable, false);
   assert.equal(result.body.servers[0].mode, "tools");
+});
+
+test("the MCP health probe reports unhealthy for an unreachable endpoint or a missing command", async () => {
+  const home = useHome();
+  // Port 1 on loopback is not listening; the probe must say so instead of guessing.
+  const closedPort = 1;
+  fs.writeFileSync(
+    path.join(home, "mcp_servers.json"),
+    JSON.stringify({
+      version: 1,
+      servers: [
+        { name: "dead", source: "local", transport: "http", enabled: true, config: { url: `http://127.0.0.1:${closedPort}/mcp` } },
+        { name: "ghostbin", source: "local", transport: "stdio", enabled: true, config: { command: "pihive-no-such-binary" } },
+      ],
+    }),
+  );
+  const registry = makeRegistry();
+
+  let result = await call(registry, "POST", "/api/mcp/servers/dead/health");
+  assert.equal(result.status, 200);
+  assert.equal(result.body.status, "unhealthy");
+  assert.equal(result.body.tools, 0);
+  assert.match(result.body.error, /ECONNREFUSED|no answer within|EADDRNOTAVAIL|EHOSTUNREACH/);
+
+  result = await call(registry, "POST", "/api/mcp/servers/ghostbin/health");
+  assert.equal(result.status, 200);
+  assert.equal(result.body.status, "unhealthy");
+  assert.match(result.body.error, /command not found on PATH/);
+
+  result = await call(registry, "GET", "/api/mcp/servers");
+  const stored = result.body.servers.find((server) => server.name === "dead");
+  assert.equal(stored.last_health_status, "unhealthy");
+  assert.ok(stored.last_error);
+  assert.equal(stored.last_health_check_at !== null, true);
 });
 
 // ---------------------------------------------------------------------------

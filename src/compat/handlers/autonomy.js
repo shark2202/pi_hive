@@ -40,7 +40,9 @@
  */
 
 import fs from "node:fs";
+import net from "node:net";
 import path from "node:path";
+import tls from "node:tls";
 
 import { colonyDir, ensureDir, hiveHome } from "../../config.js";
 import { colonyPaths, loadMetadata, saveMetadata } from "../../domain/colony.js";
@@ -65,8 +67,10 @@ const COLONY_SKILL_SCOPE = "colony_ui";
 const MCP_HINT =
   "Saved for configuration only: pi_hive does not load MCP servers yet, so " +
   "these tools are not available to agents. The entry is kept for the next loader.";
-const MCP_HEALTH_ERROR =
-  "pi_hive does not load MCP servers, so no live health check is possible";
+/** Says what a probe proves, so a green chip is not read as "tools loaded". */
+const MCP_HEALTH_NOTE =
+  "Reachability only: pi_hive connects to the endpoint but loads no MCP tools, so tools always reports 0.";
+const MCP_PROBE_TIMEOUT_MS = 3000;
 const TELEGRAM_UNAVAILABLE =
   "pi_hive's Sentinel has a local inbox but no Telegram transport";
 const SLACK_UNAVAILABLE =
@@ -1093,23 +1097,111 @@ async function handleSetMcpMode({ req, params, ctx }) {
   return ok({ name, mode, hint: "Saved. pi_hive does not load MCP servers yet, so no session applies it." });
 }
 
-async function handleMcpHealth({ params, ctx }) {
+/**
+ * Reachability probe for one kind of transport. It answers "can pi_hive reach
+ * this endpoint right now", not "does this server list tools": pi_hive loads no
+ * MCP tools, so a probe that claimed a tool count would be inventing data.
+ */
+function probeTarget(entry) {
+  const config = isPlainObject(entry.config) ? entry.config : {};
+  const transport = String(entry.transport || "stdio");
+  if (transport === "stdio") {
+    const command = typeof config.command === "string" ? config.command.trim() : "";
+    if (!command) return Promise.resolve({ ok: false, error: "no command configured" });
+    const resolved = resolveCommand(command);
+    if (!resolved) return Promise.resolve({ ok: false, error: `command not found on PATH: ${command}` });
+    return Promise.resolve({ ok: true, detail: `command resolves to ${resolved}` });
+  }
+  if (transport === "unix") {
+    const socketPath = typeof config.socket_path === "string" ? config.socket_path : "";
+    if (!socketPath) return Promise.resolve({ ok: false, error: "no socket_path configured" });
+    return probeSocket({ path: socketPath });
+  }
+  const raw = typeof config.url === "string" ? config.url : "";
+  if (!raw) return Promise.resolve({ ok: false, error: "no url configured" });
+  let url;
+  try {
+    url = new URL(raw);
+  } catch {
+    return Promise.resolve({ ok: false, error: `url is not absolute: ${raw}` });
+  }
+  const port = Number(url.port || (url.protocol === "https:" ? 443 : 80));
+  return probeSocket({ host: url.hostname, port, tls: url.protocol === "https:" });
+}
+
+/** PATH lookup without spawning: same search order the shell would use. */
+function resolveCommand(command) {
+  if (command.includes("/") || command.includes("\\")) {
+    try {
+      fs.accessSync(command, fs.constants.X_OK);
+      return path.resolve(command);
+    } catch {
+      return null;
+    }
+  }
+  const exts = process.platform === "win32" ? (process.env.PATHEXT || ".EXE;.CMD;.BAT").split(";") : [""];
+  for (const dir of String(process.env.PATH || "").split(path.delimiter)) {
+    if (!dir) continue;
+    for (const ext of exts) {
+      const candidate = path.join(dir, command + ext.toLowerCase());
+      try {
+        fs.accessSync(candidate, fs.constants.X_OK);
+        return candidate;
+      } catch {
+        // keep looking
+      }
+    }
+  }
+  return null;
+}
+
+/** TCP connect with a hard timeout; resolves instead of throwing. */
+function probeSocket({ host, port, path: socketPath, tls = false }) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (result) => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolve(result);
+    };
+    const socket = socketPath
+      ? net.connect({ path: socketPath })
+      : tls
+        ? tls.connect({ host, port, servername: host, rejectUnauthorized: false })
+        : net.connect({ host, port });
+    socket.setTimeout(MCP_PROBE_TIMEOUT_MS);
+    socket.once("connect", () => done({ ok: true, detail: `accepted a connection on port ${port}` }));
+    socket.once("secureConnect", () => done({ ok: true, detail: `TLS handshake completed with ${host}:${port}` }));
+    socket.once("timeout", () => done({ ok: false, error: `no answer within ${MCP_PROBE_TIMEOUT_MS} ms` }));
+    socket.once("error", (err) => done({ ok: false, error: err?.code ? `${err.code}: ${err.message}` : String(err?.message || err) }));
+  });
+}
+
+async function handleMcpHealth({ params } = {}) {
   const name = String(params?.server || "");
-  const entry = readMcpServers().find((row) => row.name === name);
+  const servers = readMcpServers();
+  const entry = servers.find((row) => row.name === name);
   if (!entry) return fail(404, `Server '${name}' not installed`);
-  return {
-    status: 400,
-    body: {
-      error: `${MCP_HEALTH_ERROR} (server '${name}')`,
-      code: "integration_unavailable",
-      what: MCP_HEALTH_ERROR,
-      why: "pi_hive has no MCP client/loader; a health probe would have to start or connect to a server it never uses.",
-      fix: "Use the native pi_hive tools, or implement the MCP loader before enabling health checks.",
-      name,
-      status: "unknown",
-      tools: 0,
-    },
-  };
+
+  const probe = await probeTarget(entry);
+  const status = probe.ok ? "healthy" : "unhealthy";
+  const checkedAt = new Date().toISOString();
+  entry.last_health_status = status;
+  entry.last_error = probe.ok ? null : probe.error;
+  entry.last_health_check_at = checkedAt;
+  entry.updated_at = checkedAt;
+  writeMcpServers(servers);
+
+  return ok({
+    name,
+    status,
+    tools: 0,
+    error: probe.ok ? null : probe.error,
+    detail: probe.ok ? probe.detail : null,
+    checked_at: checkedAt,
+    note: MCP_HEALTH_NOTE,
+  });
 }
 
 async function handleGetNotifications({ params, ctx }) {
@@ -1584,52 +1676,52 @@ export function registerAutonomyRoutes(registry, ctx = {}) {
     {
       method: "GET",
       path: "/api/mcp/servers",
-      status: PARTIAL,
-      description: "MCP server list from pi_hive's config store; servers are not loaded",
-      notes: "Configuration-only registry at $PI_HIVE_HOME/mcp_servers.json. pi_hive does not implement an MCP client/loader.",
+      status: IMPLEMENTED,
+      description: "the stored MCP servers from $PI_HIVE_HOME/mcp_servers.json",
+      notes: "Definitions are real and durable; pi_hive has no MCP client, so nothing here is loaded into a session.",
       handler: handleListMcpServers,
     },
     {
       method: "POST",
       path: "/api/mcp/servers",
-      status: PARTIAL,
-      description: "Store an MCP server definition (not loaded by agents)",
-      notes: "Validation and persistence are real; tool loading is not implemented.",
+      status: IMPLEMENTED,
+      description: "validates and stores an MCP server definition (409 on a duplicate name)",
+      notes: "Validation, reserved prefixes, uniqueness and persistence are real; tool loading is not implemented.",
       handler: handleAddMcpServer,
     },
     {
       method: "DELETE",
       path: "/api/mcp/servers/:server",
-      status: PARTIAL,
-      description: "Remove a stored MCP server definition",
+      status: IMPLEMENTED,
+      description: "removes a stored definition; built-ins are 400, unknown names 404",
       handler: handleRemoveMcpServer,
     },
     {
       method: "POST",
       path: "/api/mcp/servers/:server/enable",
-      status: PARTIAL,
-      description: "Enable a stored MCP server (no loader to apply it)",
+      status: IMPLEMENTED,
+      description: "persists enabled=true on a stored definition",
       handler: (args) => handleSetMcpEnabled(args, true),
     },
     {
       method: "POST",
       path: "/api/mcp/servers/:server/disable",
-      status: PARTIAL,
-      description: "Disable a stored MCP server",
+      status: IMPLEMENTED,
+      description: "persists enabled=false on a stored definition",
       handler: (args) => handleSetMcpEnabled(args, false),
     },
     {
       method: "POST",
       path: "/api/mcp/servers/:server/mode",
-      status: PARTIAL,
-      description: "Set tools/cli mode on a stored MCP server",
+      status: IMPLEMENTED,
+      description: "persists tools/cli mode on a stored definition",
       handler: handleSetMcpMode,
     },
     {
       method: "POST",
       path: "/api/mcp/servers/:server/health",
-      status: PARTIAL,
-      description: "Explicit 400: pi_hive cannot health-check an MCP server it never loads",
+      status: IMPLEMENTED,
+      description: "real reachability probe (PATH lookup, TCP/TLS connect, unix socket); result is persisted",
       handler: handleMcpHealth,
     },
 

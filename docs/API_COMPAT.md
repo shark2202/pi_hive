@@ -145,17 +145,17 @@ _pi_hive:_ 4 implemented, 2 partial. GET/PUT soul, proposal decide and rollback 
 
 ## MCP servers (7)
 
-_pi_hive:_ all seven are partial: a validated configuration store at $PI_HIVE_HOME/mcp_servers.json exists, but pi_hive has no MCP client/loader, so servers are stored, enabled and described but never loaded; health answers an explicit 400.
+_pi_hive:_ all seven implemented. Definitions live in `$PI_HIVE_HOME/mcp_servers.json` with real validation (transport-specific required fields, 1–64 char names, reserved `hive_`/`__hive` prefixes, `409` on duplicates), and enable/disable/mode/delete persist. `POST .../health` is a real reachability probe — PATH lookup for `stdio`, TCP/TLS connect for `http`/`sse` with a 3 s timeout, unix-socket connect — and it persists `last_health_status`/`last_error`/`last_health_check_at`. It reports `tools: 0` because pi_hive has no MCP client and must not invent a tool count; loading tools into sessions is still missing (see `docs/PARITY.md`).
 
 | Method | Path | Client (source) | Request | Response | SSE events | pi_hive |
 |---|---|---|---|---|---|---|
-| GET | `/mcp/servers` | mcp (`mcp.ts:63`) | — | {servers: McpServer[]} | — | partial |
-| POST | `/mcp/servers` | mcp (`mcp.ts:65`) | AddMcpServerBody | {server: McpServer, hint} | — | partial |
-| DELETE | `/mcp/servers/:server` | mcp (`mcp.ts:67`) | — | {removed} | — | partial |
-| POST | `/mcp/servers/:server/enable` | mcp (`mcp.ts:69`) | — | {name, enabled} | — | partial |
-| POST | `/mcp/servers/:server/disable` | mcp (`mcp.ts:69`) | — | {name, enabled} | — | partial |
-| POST | `/mcp/servers/:server/mode` | mcp (`mcp.ts:74`) | inline {mode: 'tools'\|'cli'} | {name, mode, hint} | — | partial |
-| POST | `/mcp/servers/:server/health` | mcp (`mcp.ts:78`) | — | McpHealthResult | — | partial |
+| GET | `/mcp/servers` | mcp (`mcp.ts:63`) | — | {servers: McpServer[]} | — | implemented |
+| POST | `/mcp/servers` | mcp (`mcp.ts:65`) | AddMcpServerBody | {server: McpServer, hint} | — | implemented |
+| DELETE | `/mcp/servers/:server` | mcp (`mcp.ts:67`) | — | {removed} | — | implemented |
+| POST | `/mcp/servers/:server/enable` | mcp (`mcp.ts:69`) | — | {name, enabled} | — | implemented |
+| POST | `/mcp/servers/:server/disable` | mcp (`mcp.ts:69`) | — | {name, enabled} | — | implemented |
+| POST | `/mcp/servers/:server/mode` | mcp (`mcp.ts:74`) | inline {mode: 'tools'\|'cli'} | {name, mode, hint} | — | implemented |
+| POST | `/mcp/servers/:server/health` | mcp (`mcp.ts:78`) | — | McpHealthResult | — | implemented |
 
 ## Credentials (12)
 
@@ -483,9 +483,10 @@ structured `501`. The official boot and session flows are live:
 7. **Skills, prompts, memories** — skills and memories operate on real files;
    prompt creation/deletion and skill library upload/install requests are
    explicit 400 partials.
-8. **Credentials, MCP, models** — credential reads are real (env-only); vault
-   writes, MCP loading, model slots/endpoints and provider-library writes remain
-   partial because the backing subsystems do not exist.
+8. **Credentials, models** — credential reads are real (env-only); vault writes,
+   model slots/endpoints remain partial because the backing subsystems do not
+   exist. MCP definitions and reachability probes are real, but no MCP tool is
+   loaded into a session.
 9. **Sentinel channels, Claude Code queens** — Sentinel local config/inbox and
    credential presence are implemented; Telegram/Slack transports and Claude
    Code transcripts are explicit 4xx/empty partials, not simulated successes.

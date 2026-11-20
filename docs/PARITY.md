@@ -110,7 +110,8 @@
 | Terminal | ✅ | `terminal_exec`, workspace-scoped cwd, timeout |
 | Browser | ⬜ | No browser bridge |
 | Web search / scrape | ⬜ | No `web_search`/`web_scrape` |
-| MCP | ⬜ | No MCP server loading |
+| MCP definitions + health | ✅ | `/api/mcp/servers*` stores validated definitions in `hiveHome()/mcp_servers.json`; enable/disable/mode/delete persist; health is a real reachability probe (PATH lookup, TCP/TLS, unix socket) recorded on the entry |
+| MCP tool loading | ⬜ | No MCP client: stored servers are never started, and `health` reports `tools: 0` on purpose |
 | Credentials store | 🟡 | Env only; no encrypted store/UI |
 | Model catalog/UI | 🟡 | Env-configured single OpenAI-compatible model |
 | Config writes | ✅ | Provider slots, named provider library (+apply), external skill roots, feature switches, the model override, profile, pacing table and profile avatar persist under `hiveHome()/config/`; a saved model outranks the environment for runtimes built afterwards, `api_key` in a payload is refused |
