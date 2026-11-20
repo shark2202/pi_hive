@@ -13,10 +13,14 @@ machine-specific assumption, and the official frontend is served from inside the
    materialize them: the four symlinks were removed and `npm install` wrote real copies plus
    a `package-lock.json` (43 KB). No version changed.
 2. **Machine paths in tracked docs.** `docs/`, `program/`, `handoff.md` and `AGENTS.md`
-   contained `<home>`-style absolute paths from earlier evidence runs. They were rewritten to
-   `<hive-core>`, `<pi-hive>`, `<global-npm>`, `<home>` placeholders. A repo-wide grep for
-   `/Users/mac` over `src tests frontend/src docs program README.md AGENTS.md handoff.md` now
-   returns nothing, and `git ls-files -s | awk '$1=="120000"'` finds no tracked symlinks.
+   contained absolute home paths from earlier evidence runs. They were rewritten to
+   `<hive-core>`, `<pi-hive>`, `<global-npm>` and `<home>` placeholders, so a repo-wide scan
+   for the old prefix over `src tests frontend/src docs program README.md AGENTS.md
+   handoff.md` returns nothing.
+
+Two things that look like residue but are not: `node_modules/.bin/*` are npm's relative shims
+(`../@earendil-works/pi-ai/dist/cli.js`), and this report names the old prefix while explaining
+the fix — neither is a host assumption.
 
 ## macOS (host)
 
