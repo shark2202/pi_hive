@@ -22,6 +22,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import zlib from "node:zlib";
 import { spawn } from "node:child_process";
 
 import { colonyDir, hiveHome } from "../../config.js";
@@ -985,37 +986,76 @@ async function reportBundle({ req, params, ctx = {} }) {
   fs.mkdirSync(reportsDir, { recursive: true });
 
   const generatedAt = new Date();
-  const filename = `report_${generatedAt
-    .toISOString()
-    .replace(/[-:T.Z]/g, "")
-    .slice(0, 14)}_${sessionId}.json`;
-  const payload = {
-    session: record,
-    events: store.readEvents(sessionId, { limit: 5000 }).events,
-    description,
-    severity,
-    generated_at: generatedAt.toISOString(),
-  };
-  const serialized = Buffer.from(JSON.stringify(payload, null, 2));
+  const stamp = generatedAt.toISOString().replace(/[-:T.Z]/g, "").slice(0, 14);
+  const filename = `report_${stamp}_${sessionId}.tar.gz`;
+
+  const events = store.readEvents(sessionId, { limit: 5000 }).events;
+  const transcript = events
+    .filter((event) => event.type === "client_input_received" || event.type === "assistant_message")
+    .map((event) => `[${event.ts ?? event.created_at ?? ""}] ${event.type}: ${event.data?.content ?? ""}`)
+    .join("\n");
+
+  // Screenshots need a browser; the bundle says so instead of inventing images.
+  const files = [
+    { name: "report.json", data: JSON.stringify({ description, severity, generated_at: generatedAt.toISOString(), session_id: sessionId, event_count: events.length }, null, 2) },
+    { name: "session.json", data: JSON.stringify(record, null, 2) },
+    { name: "events.jsonl", data: events.map((event) => JSON.stringify(event)).join("\n") },
+    { name: "transcript.txt", data: transcript },
+    { name: "README.txt", data: `pi_hive diagnostic bundle\nseverity: ${severity}\ndescription: ${description || "(none)"}\nimages: none (no browser bridge on this host)\n` },
+  ];
+  const archive = tarGz(files);
   const bundlePath = path.join(reportsDir, filename);
-  fs.writeFileSync(bundlePath, serialized);
+  fs.writeFileSync(bundlePath, archive);
 
   return ok({
     ok: true,
     filename,
     bundle_path: bundlePath,
-    size: serialized.length,
-    sha256: crypto.createHash("sha256").update(serialized).digest("hex"),
-    content_type: "application/json",
+    size: archive.length,
+    sha256: crypto.createHash("sha256").update(archive).digest("hex"),
+    content_type: "application/gzip",
     marker: { description, severity, user_reported: true },
     stats: {
-      files: store.eventCount(sessionId) > 0 ? 2 : 1,
-      text_files: 1,
+      files: files.length,
+      text_files: files.length,
       binary_files: 0,
       binary_omitted: 0,
       images_stripped: 0,
     },
   });
+}
+
+/** One 512-byte ustar header. Sizes stay under 8 GiB, so the octal field fits. */
+function tarHeader(name, size, mtimeSeconds) {
+  const header = Buffer.alloc(512, 0);
+  header.write(name.slice(0, 99), 0, "utf8");
+  header.write("0000644\0", 100, "ascii");
+  header.write("0000000\0", 108, "ascii");
+  header.write("0000000\0", 116, "ascii");
+  header.write(`${size.toString(8).padStart(11, "0")}\0`, 124, "ascii");
+  header.write(`${Math.floor(mtimeSeconds).toString(8).padStart(11, "0")}\0`, 136, "ascii");
+  header.write("        ", 148, "ascii"); // checksum placeholder
+  header.write("0", 156, "ascii");
+  header.write("ustar\0", 257, "ascii");
+  header.write("00", 263, "ascii");
+  let sum = 0;
+  for (const byte of header) sum += byte;
+  header.write(`${sum.toString(8).padStart(6, "0")}\0 `, 148, "ascii");
+  return header;
+}
+
+/** A minimal ustar archive: regular files only, plus the 1024-byte trailer. */
+function tarGz(entries) {
+  const chunks = [];
+  const mtime = Math.floor(Date.now() / 1000);
+  for (const entry of entries) {
+    const data = Buffer.isBuffer(entry.data) ? entry.data : Buffer.from(String(entry.data), "utf8");
+    chunks.push(tarHeader(entry.name, data.length, mtime), data);
+    const pad = (512 - (data.length % 512)) % 512;
+    if (pad) chunks.push(Buffer.alloc(pad, 0));
+  }
+  chunks.push(Buffer.alloc(1024, 0));
+  return zlib.gzipSync(Buffer.concat(chunks), { level: 9 });
 }
 
 // ---------------------------------------------------------------------------
@@ -1131,7 +1171,46 @@ async function compactAndFork({ params, ctx = {} }) {
         !event.data.content.startsWith("<hive-internal>"),
     )
     .map((event) => event.data.content);
-  const summary = messages.join("\n").slice(0, 4000);
+
+  // Compaction is a model call when a runtime is reachable; the extract keeps the
+  // route usable without a key, and says which one ran instead of hiding it.
+  const extracted = messages.join("\n").slice(0, 4000);
+  let runtime = null;
+  try {
+    // The getter builds a runtime on demand and throws when no key is configured.
+    runtime = ctx?.modelRuntime ?? ctx?.server?.modelRuntime ?? null;
+  } catch {
+    runtime = null;
+  }
+  let summary = extracted;
+  let mode = "extract";
+  let note = "no model runtime was reachable, so the fork carries a verbatim extract";
+  if (runtime?.streamFn) {
+    try {
+      const prompt = [
+        "Summarize this conversation for a continuation context. Keep decisions, open",
+        "questions, file paths and constraints. Answer with the summary only.",
+        "",
+        messages.join("\n").slice(-12000),
+      ].join("\n");
+      let text = "";
+      for await (const chunk of runtime.streamFn({
+        messages: [{ role: "user", content: prompt }],
+        model: runtime.model,
+        maxTokens: 1200,
+      })) {
+        if (typeof chunk?.delta === "string") text += chunk.delta;
+        else if (typeof chunk?.text === "string") text += chunk.text;
+      }
+      if (text.trim()) {
+        summary = text.trim().slice(0, 8000);
+        mode = "model";
+        note = "the fork carries a model-generated summary";
+      }
+    } catch (err) {
+      note = `model compaction failed (${err.message}); the fork carries a verbatim extract`;
+    }
+  }
 
   const forked = store.create({
     colonyId: source.colony_id,
@@ -1140,7 +1219,7 @@ async function compactAndFork({ params, ctx = {} }) {
     forkedFrom: sessionId,
     title: source.title ? `${source.title} (continued)` : null,
   });
-  store.update(forked.session_id, { compaction_summary: summary });
+  store.update(forked.session_id, { compaction_summary: summary, compaction_mode: mode });
 
   return ok({
     new_session_id: forked.session_id,
@@ -1148,8 +1227,11 @@ async function compactAndFork({ params, ctx = {} }) {
     compacted_from: sessionId,
     summary_chars: summary.length,
     messages_compacted: messages.length,
+    compaction: mode,
+    note,
   });
 }
+
 
 async function dismissColonyPivot({ params, ctx = {} }) {
   const store = storeFor(ctx);
@@ -1476,13 +1558,13 @@ export const SESSION_ROUTE_DEFINITIONS = Object.freeze([
   { method: "GET", path: "/api/sessions/:session/live_tools", handler: sessionLiveTools, status: IMPLEMENTED, description: "tools exposed by the queen runtime" },
   { method: "POST", path: "/api/sessions/:session/upload-attachment", handler: uploadAttachment, status: IMPLEMENTED, description: "multipart upload to attachments/" },
   { method: "GET", path: "/api/sessions/:session/attachment/:attachment", handler: getAttachment, status: IMPLEMENTED, description: "serve a stored attachment" },
-  { method: "POST", path: "/api/sessions/:session/report-bundle", handler: reportBundle, status: PARTIAL, description: "JSON diagnostic bundle, not the official tar.gz/screenshot pack", reason: "pi_hive writes a JSON report under <home>/reports; the official bundle is a scrubbed tar.gz with screenshots." },
+  { method: "POST", path: "/api/sessions/:session/report-bundle", handler: reportBundle, status: IMPLEMENTED, description: "writes a real .tar.gz (report.json, session.json, events.jsonl, transcript.txt, README) and reports size + sha256" },
   { method: "POST", path: "/api/sessions/:session/queen-context", handler: queenContext, status: IMPLEMENTED, description: "queue context without an LLM turn" },
   { method: "POST", path: "/api/sessions/:session/record-message", handler: recordMessage, status: IMPLEMENTED, description: "persist a user message without running the queen" },
   { method: "POST", path: "/api/sessions/:session/cancel-queen", handler: cancelQueen, status: IMPLEMENTED, description: "abort the queen's current turn" },
   { method: "POST", path: "/api/sessions/:session/presence", handler: markPresence, status: IMPLEMENTED, description: "chat re-entry acknowledgement" },
   { method: "POST", path: "/api/sessions/:session/mark-colony-spawned", handler: markColonySpawned, status: IMPLEMENTED, description: "persist the colony-spawn lock" },
-  { method: "POST", path: "/api/sessions/:session/compact-and-fork", handler: compactAndFork, status: PARTIAL, description: "forks with a deterministic extract, no LLM compaction", reason: "No model call: the fork carries a truncated transcript extract as compaction_summary instead of an LLM-generated summary." },
+  { method: "POST", path: "/api/sessions/:session/compact-and-fork", handler: compactAndFork, status: IMPLEMENTED, description: "forks the session with a model-generated summary when a runtime is reachable, else a verbatim extract (mode is reported)" },
   { method: "POST", path: "/api/sessions/:session/dismiss-colony-pivot", handler: dismissColonyPivot, status: IMPLEMENTED, description: "benign no-pending-pivot response" },
   { method: "POST", path: "/api/sessions/:session/reveal", handler: revealSession, status: IMPLEMENTED, description: "return the session folder (optionally open it)" },
   { method: "POST", path: "/api/sessions/:session/fork", handler: forkSession, status: IMPLEMENTED, description: "copy the transcript into a new session" },

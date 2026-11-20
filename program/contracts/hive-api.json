@@ -43,7 +43,7 @@
     "derivation": "api.get/post/put/patch/delete/upload + apiUrl + subscribeSse call sites, plus the exported types in src/api/types.ts"
   },
   "generated_at": "2026-11-19T10:10:50.368Z",
-  "revised_at": "2026-11-20T09:04:49+08:00",
+  "revised_at": "2026-11-20T09:07:33+08:00",
   "revision": "1.3.0",
   "domains": [
     "colonies",
@@ -93,8 +93,8 @@
       "workers": 7
     },
     "by_status": {
-      "implemented": 157,
-      "partial": 14,
+      "implemented": 159,
+      "partial": 12,
       "shell-only": 0,
       "missing": 0
     },
@@ -1059,8 +1059,8 @@
       "response_type": "{new_session_id, queen_id, compacted_from, summary_chars, messages_compacted}",
       "sse": false,
       "sse_events": [],
-      "pi_hive_status": "partial",
-      "notes": "Partial compatibility: forks with a deterministic extract, no LLM compaction. No model call: the fork carries a truncated transcript extract as compaction_summary instead of an LLM-generated summary.",
+      "pi_hive_status": "implemented",
+      "notes": "forks the session with a model-generated summary when a runtime is reachable, else a verbatim extract (mode is reported)",
       "source": "execution.ts:85",
       "query": []
     },
@@ -1119,8 +1119,8 @@
       "response_type": "{ok, filename, bundle_path, size, sha256, content_type}",
       "sse": false,
       "sse_events": [],
-      "pi_hive_status": "partial",
-      "notes": "Partial compatibility: JSON diagnostic bundle, not the official tar.gz/screenshot pack. pi_hive writes a JSON report under <home>/reports; the official bundle is a scrubbed tar.gz with screenshots.",
+      "pi_hive_status": "implemented",
+      "notes": "writes a real .tar.gz (report.json, session.json, events.jsonl, transcript.txt, README) and reports size + sha256",
       "source": "sessionReport.ts:36",
       "query": []
     },

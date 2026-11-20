@@ -13,6 +13,7 @@ import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import zlib from "node:zlib";
 
 import { RouteRegistry, ROUTE_STATUS } from "../../src/compat/router.js";
 import { colonyDir } from "../../src/config.js";
@@ -195,8 +196,8 @@ test("registers all 31 official session routes with honest statuses", () => {
   }
 
   const counts = registry.counts();
-  assert.equal(counts.implemented, 29);
-  assert.equal(counts.partial, 2);
+  assert.equal(counts.implemented, 31);
+  assert.equal(counts.partial, 0);
   assert.equal(counts.missing, 0);
 
   for (const route of registry.list()) {
@@ -956,7 +957,7 @@ test("fork copies the transcript and can cut before a timestamp", async () => {
   assert.equal(bad.status, 400);
 });
 
-test("compact-and-fork creates a linked session with a deterministic extract", async () => {
+test("compact-and-fork links a new session and reports which compaction ran", async () => {
   useHome();
   seedColony("acme");
   const registry = makeRegistry({ runtimes: new Map([["acme", makeQueen("acme")]]) });
@@ -978,6 +979,8 @@ test("compact-and-fork creates a linked session with a deterministic extract", a
   assert.equal(result.body.messages_compacted, 2);
   assert.equal(typeof result.body.summary_chars, "number");
   assert.ok(result.body.summary_chars > 0);
+  assert.equal(result.body.compaction, "extract", "no runtime is reachable in this harness");
+  assert.match(result.body.note, /verbatim extract/);
 
   const store = new SessionStore({ home: process.env.PI_HIVE_HOME });
   const forked = store.get(result.body.new_session_id);
@@ -1078,7 +1081,7 @@ test("dismiss-colony-pivot and reveal return real paths", async () => {
   );
 });
 
-test("report-bundle writes a hashed JSON diagnostic bundle", async () => {
+test("report-bundle writes a real tar.gz with size and sha256", async () => {
   useHome();
   seedColony("acme");
   const registry = makeRegistry();
@@ -1092,14 +1095,31 @@ test("report-bundle writes a hashed JSON diagnostic bundle", async () => {
   });
   assert.equal(report.status, 200);
   assert.equal(report.body.ok, true);
-  assert.equal(report.body.content_type, "application/json");
+  assert.equal(report.body.content_type, "application/gzip");
+  assert.match(report.body.filename, /\.tar\.gz$/);
   assert.match(report.body.sha256, /^[a-f0-9]{64}$/);
   assert.equal(report.body.size, fs.statSync(report.body.bundle_path).size);
 
-  const payload = JSON.parse(fs.readFileSync(report.body.bundle_path, "utf8"));
-  assert.equal(payload.session.session_id, created.session_id);
-  assert.equal(payload.description, "it broke");
-  assert.equal(payload.events[0].data.content, "evidence");
+  // A real gzipped tar: unpack it and read the members back.
+  const archive = zlib.gunzipSync(fs.readFileSync(report.body.bundle_path));
+  const names = [];
+  for (let offset = 0; offset + 512 <= archive.length; ) {
+    const header = archive.subarray(offset, offset + 512);
+    const name = header.subarray(0, 100).toString("utf8").replace(/\0.*$/s, "");
+    if (!name) break;
+    const size = parseInt(header.subarray(124, 136).toString("ascii").replace(/\0.*$/s, "").trim(), 8);
+    names.push(name);
+    const body = archive.subarray(offset + 512, offset + 512 + size).toString("utf8");
+    if (name === "report.json") {
+      assert.equal(JSON.parse(body).description, "it broke");
+      assert.equal(JSON.parse(body).severity, "high");
+    }
+    if (name === "session.json") assert.equal(JSON.parse(body).session_id, created.session_id);
+    if (name === "events.jsonl") assert.match(body, /"evidence"/);
+    offset += 512 + Math.ceil(size / 512) * 512;
+  }
+  assert.deepEqual(names, ["report.json", "session.json", "events.jsonl", "transcript.txt", "README.txt"]);
+  assert.equal(report.body.stats.binary_files, 0);
 
   assert.equal(
     (await callJson(registry, "POST", "/api/sessions/sess-nope/report-bundle", { body: {} })).status,

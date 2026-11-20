@@ -65,7 +65,7 @@ _pi_hive:_ all seven routes are served: tools-index from colony metadata plus to
 
 ## Sessions & chat execution (32)
 
-_pi_hive:_ 30 implemented, 2 partial. Sessions are durable records under PI_HIVE_HOME/sessions with event logs and attachments; chat forwards to the colony QueenRuntime. report-bundle writes a JSON diagnostic bundle (not the official tar.gz/screenshot pack) and compact-and-fork uses a deterministic transcript extract instead of LLM compaction.
+_pi_hive:_ 32 implemented. Sessions are durable records under `PI_HIVE_HOME/sessions` with event logs and attachments; chat forwards to the colony QueenRuntime. `report-bundle` writes a real gzipped tar (`report.json`, `session.json`, `events.jsonl`, `transcript.txt`, `README.txt`) with `size`, `sha256` and `content_type: application/gzip`; screenshots are counted as zero rather than faked. `compact-and-fork` forks the session and compacts with the model runtime when one is reachable, otherwise with a verbatim extract — the response says which (`compaction: "model" | "extract"` plus a `note`).
 
 | Method | Path | Client (source) | Request | Response | SSE events | pi_hive |
 |---|---|---|---|---|---|---|
@@ -76,11 +76,11 @@ _pi_hive:_ 30 implemented, 2 partial. Sessions are durable records under PI_HIVE
 | POST | `/sessions/:session/cancel-queen` | execution (`execution.ts:59`) | — | {cancelled, error?} | — | implemented |
 | POST | `/sessions/:session/presence` | execution (`execution.ts:67`) | — | {ok, resumed} | — | implemented |
 | POST | `/sessions/:session/mark-colony-spawned` | execution (`execution.ts:73`) | inline {colony_id} | {session_id, colony_spawned, spawned_colony_id} | — | implemented |
-| POST | `/sessions/:session/compact-and-fork` | execution (`execution.ts:85`) | — | {new_session_id, queen_id, compacted_from, summary_chars, messages_compacted} | — | partial |
+| POST | `/sessions/:session/compact-and-fork` | execution (`execution.ts:85`) | — | {new_session_id, queen_id, compacted_from, summary_chars, messages_compacted} | — | implemented |
 | GET | `/sessions/:session/snapshot` | execution (`queen-dm.tsx:2472`) | — | {activity?, queen_busy_reason?} | — | implemented |
 | GET | `/sessions/:session/live_tools` | execution (`DebugPanel.tsx:82`) | — | LiveToolsResponse | — | implemented |
 | GET | `/sessions/:session/attachment/:attachment` | execution (`lib/attachments.ts:53`) | — | file bytes | — | implemented |
-| POST | `/sessions/:session/report-bundle` | execution (`sessionReport.ts:36`) | inline {description, severity} | {ok, filename, bundle_path, size, sha256, content_type} | — | partial |
+| POST | `/sessions/:session/report-bundle` | execution (`sessionReport.ts:36`) | inline {description, severity} | {ok, filename, bundle_path, size, sha256, content_type} | — | implemented |
 | POST | `/sessions` | sessions (`sessions.ts:59`) | inline {colony_id?, model?, initial_prompt?, queen_resume_from?, initial_phase?, queen_name?, source_session_id?} | LiveSession | — | implemented |
 | GET | `/sessions` | sessions (`sessions.ts:71`) | — | {sessions: LiveSession[]} | — | implemented |
 | GET | `/sessions/:session` | sessions (`sessions.ts:75`) | — | LiveSessionDetail | — | implemented |
