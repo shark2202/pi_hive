@@ -29,6 +29,7 @@ import { registerSessionRoutes } from "./handlers/sessions.js";
 import { registerQueenRoutes } from "./handlers/queens.js";
 import { CATALOG_ROUTE_SPECS, registerCatalogRoutes } from "./handlers/catalog.js";
 import { registerColoniesDataRoutes } from "./handlers/colonies-data.js";
+import { registerGlobalDataRoutes } from "./handlers/global-data.js";
 import { registerAutonomyRoutes } from "./handlers/autonomy.js";
 import { registerStreamRoutes } from "./handlers/streams.js";
 
@@ -138,6 +139,7 @@ export function installCompatHandlers(ctx = {}, registry = defaultRegistry) {
   // Catalogue owns /api/prompts (replacing config's empty prompt list).
   registerCatalogRoutes(registry, ctx);
   registerColoniesDataRoutes(registry, ctx);
+  registerGlobalDataRoutes(registry, ctx);
   registerAutonomyRoutes(registry, ctx);
   registerStreamRoutes(registry, ctx);
 

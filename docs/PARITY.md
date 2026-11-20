@@ -34,6 +34,7 @@
 | Colony metadata | ✅ | `metadata.json` |
 | Colony list | ✅ | `GET /api/colonies`, CLI |
 | Colony import/export | ⬜ | tar import/export not implemented |
+| Global team data | ✅ | `/api/global/data/*` runs against `hiveHome()/global-data/team.db`: schema-driven tables/rows, insert (minted pk, `409` on duplicate), pk-addressed update/delete, filter/search/sort, group counts, inferred foreign keys and a `_global_changes` feed. Local file, not Hive's cloud team DB — no cross-machine sync |
 | Queen identity / persona | 🟡 | 4 built-in personas; no full 13/Org Chart |
 | Queen profile editing | ✅ | PATCH profile, PUT persona, PUT llm, tools allowlist, avatar upload/read/delete persist per queen under `hiveHome()/queens/<id>`; edits re-bind her live sessions |
 | Queen DM vs colony chat | ✅ | Queen DM sessions are durable (create/resume/select/new) and bound to the queen; colony chat stays a separate session |
@@ -149,7 +150,7 @@ A feature is ✅ only when:
 
 ## Next milestones
 
-1. **API behavior**: close the 64 partial rows (MCP loader, Telegram/Slack, global DB, Claude Code peer, compaction, credential writes); route surface is complete.
+1. **API behavior**: close the 32 remaining partial rows (MCP loader, Telegram/Slack, Claude Code peer, compaction, credential writes, prompts, skills upload, agents); route surface is complete.
 2. **Memory reflection**: cooldown reflection and consolidation (Soul proposals exist).
 3. **MCP and browser/web tools**: load MCP servers; add browser/web tools.
 4. **Sentinel channels**: Telegram/Slack + escalation policy.

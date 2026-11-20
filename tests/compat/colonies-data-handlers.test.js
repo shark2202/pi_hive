@@ -16,7 +16,6 @@ import path from "node:path";
 import { RouteRegistry } from "../../src/compat/router.js";
 import {
   COLONIES_DATA_ROUTES,
-  GLOBAL_DATA_CODE,
   registerColoniesDataRoutes,
 } from "../../src/compat/handlers/colonies-data.js";
 import { colonyDir } from "../../src/config.js";
@@ -117,10 +116,10 @@ function seedChangeLog(name) {
 
 // --- registration ----------------------------------------------------------
 
-test("registers exactly the 19 official routes: 10 implemented, 9 partial", () => {
+test("registers exactly the 10 colony routes, all implemented", () => {
   const registry = makeRegistry();
   assert.equal(registry.routes.length, COLONIES_DATA_ROUTES.length);
-  assert.equal(COLONIES_DATA_ROUTES.length, 19);
+  assert.equal(COLONIES_DATA_ROUTES.length, 10);
 
   for (const { method, path: pattern } of COLONIES_DATA_ROUTES) {
     const concrete = pattern.replace(":colony", "acme").replace(":table", "leads");
@@ -130,7 +129,7 @@ test("registers exactly the 19 official routes: 10 implemented, 9 partial", () =
   }
 
   const counts = registry.counts();
-  assert.deepEqual(counts, { implemented: 10, partial: 9, missing: 0, total: 19 });
+  assert.deepEqual(counts, { implemented: 10, partial: 0, missing: 0, total: 10 });
 });
 
 // --- scaffold --------------------------------------------------------------
@@ -738,55 +737,3 @@ test("PATCH rows maps constraint violations to 409", async () => {
   assert.equal(result.body.code, "constraint_violation");
 });
 
-// --- global data (absent) --------------------------------------------------
-
-test("global collection routes return valid empty schemas with an explicit reason", async () => {
-  const registry = makeRegistry();
-
-  const tables = await call(registry, "GET", "/api/global/data/tables");
-  assert.equal(tables.status, 200);
-  assert.deepEqual(tables.body.tables, []);
-  assert.equal(tables.body.available, false);
-  assert.equal(tables.body.code, GLOBAL_DATA_CODE);
-  assert.equal(typeof tables.body.reason, "string");
-
-  const changes = await call(registry, "GET", "/api/global/data/changes");
-  assert.equal(changes.status, 200);
-  assert.deepEqual(changes.body, {
-    cursor: null,
-    covered: [],
-    truncated: false,
-    tables: {},
-    available: false,
-    code: GLOBAL_DATA_CODE,
-    reason: changes.body.reason,
-  });
-
-  const fks = await call(registry, "GET", "/api/global/data/foreign-keys");
-  assert.equal(fks.status, 200);
-  assert.deepEqual(fks.body.foreign_keys, []);
-  assert.equal(fks.body.available, false);
-});
-
-test("global table-scoped routes refuse with 404 and never invent rows", async () => {
-  const registry = makeRegistry();
-  const cases = [
-    ["GET", "/api/global/data/tables/leads/rows"],
-    ["PATCH", "/api/global/data/tables/leads/rows"],
-    ["POST", "/api/global/data/tables/leads/query"],
-    ["POST", "/api/global/data/tables/leads/group-counts"],
-    ["POST", "/api/global/data/tables/leads/rows"],
-    ["DELETE", "/api/global/data/tables/leads/rows"],
-  ];
-
-  for (const [method, pathname] of cases) {
-    const result = await call(registry, method, pathname, {
-      body: { row: { name: "fake" }, pk: { id: 1 } },
-    });
-    assert.equal(result.status, 404, `${method} ${pathname}`);
-    assert.equal(result.body.code, GLOBAL_DATA_CODE);
-    assert.equal(result.body.available, false);
-    assert.equal(result.body.rows, undefined);
-    assert.ok(result.body.error.includes("leads"));
-  }
-});

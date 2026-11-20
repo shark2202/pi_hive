@@ -272,7 +272,7 @@ _pi_hive:_ 1 implemented, 2 partial. GET /prompts returns the official empty lis
 
 ## Data (colony tracker + global team DB) (13)
 
-_pi_hive:_ 4 implemented, 9 partial. Colony tracker table inventory, paged rows, change feed and single-row update are real SQLite operations; every /global/data route answers an empty envelope or explicit 404 because no global team database is configured.
+_pi_hive:_ 13 implemented. Colony tracker table inventory, paged rows, change feed and single-row update are real SQLite operations on `colonies/<name>/tracker/tracker.db`. The nine `/global/data/*` routes run against a local team DB at `hiveHome()/global-data/team.db` (`src/compat/handlers/global-data.js`) instead of the cloud proxy: schema-driven tables/columns/primary keys, paged rows (limit ≤ 500), true insert with a minted pk and `409 {error:'conflict', pk}`, pk-addressed update/delete, server-side filter/search/sort (11 ops), group counts, foreign-key edges inferred from `<table>_id` columns, and a row-level feed backed by `_global_changes` whose cursor is the last log id.
 
 | Method | Path | Client (source) | Request | Response | SSE events | pi_hive |
 |---|---|---|---|---|---|---|
@@ -280,15 +280,15 @@ _pi_hive:_ 4 implemented, 9 partial. Colony tracker table inventory, paged rows,
 | GET | `/colonies/:colony/data/tables/:table/rows` | colonyData (`colonyData.ts:94`) | — | TableRowsResponse | — | implemented |
 | GET | `/colonies/:colony/data/changes` | colonyData (`colonyData.ts:103`) | — | ChangesResponse | — | implemented |
 | PATCH | `/colonies/:colony/data/tables/:table/rows` | colonyData (`colonyData.ts:109`) | UpdateRowRequest | {updated} | — | implemented |
-| GET | `/global/data/tables` | globalData (`globalData.ts:78`) | — | {tables: TableOverview[]} | — | partial |
-| GET | `/global/data/changes` | globalData (`globalData.ts:83`) | — | GlobalChangesResponse | — | partial |
-| GET | `/global/data/tables/:table/rows` | globalData (`globalData.ts:102`) | — | TableRowsResponse | — | partial |
-| PATCH | `/global/data/tables/:table/rows` | globalData (`globalData.ts:108`) | UpdateRowRequest | {updated} | — | partial |
-| POST | `/global/data/tables/:table/query` | globalData (`globalData.ts:116`) | QueryRequest (wire keys order_by/order_dir) | TableRowsResponse | — | partial |
-| POST | `/global/data/tables/:table/group-counts` | globalData (`globalData.ts:135`) | inline {group_by, filter?, search?} | {table, group_by, groups: GroupCount[]} | — | partial |
-| POST | `/global/data/tables/:table/rows` | globalData (`globalData.ts:150`) | inline {row: Record<string, CellValue>} | {inserted, pk} | — | partial |
-| DELETE | `/global/data/tables/:table/rows` | globalData (`globalData.ts:157`) | inline {pk: Record<string, CellValue>} | {deleted} | — | partial |
-| GET | `/global/data/foreign-keys` | globalData (`globalData.ts:164`) | — | {foreign_keys: ForeignKey[]} | — | partial |
+| GET | `/global/data/tables` | globalData (`globalData.ts:78`) | — | {tables: TableOverview[]} | — | implemented |
+| GET | `/global/data/changes` | globalData (`globalData.ts:83`) | — | GlobalChangesResponse | — | implemented |
+| GET | `/global/data/tables/:table/rows` | globalData (`globalData.ts:102`) | — | TableRowsResponse | — | implemented |
+| PATCH | `/global/data/tables/:table/rows` | globalData (`globalData.ts:108`) | UpdateRowRequest | {updated} | — | implemented |
+| POST | `/global/data/tables/:table/query` | globalData (`globalData.ts:116`) | QueryRequest (wire keys order_by/order_dir) | TableRowsResponse | — | implemented |
+| POST | `/global/data/tables/:table/group-counts` | globalData (`globalData.ts:135`) | inline {group_by, filter?, search?} | {table, group_by, groups: GroupCount[]} | — | implemented |
+| POST | `/global/data/tables/:table/rows` | globalData (`globalData.ts:150`) | inline {row: Record<string, CellValue>} | {inserted, pk} | — | implemented |
+| DELETE | `/global/data/tables/:table/rows` | globalData (`globalData.ts:157`) | inline {pk: Record<string, CellValue>} | {deleted} | — | implemented |
+| GET | `/global/data/foreign-keys` | globalData (`globalData.ts:164`) | — | {foreign_keys: ForeignKey[]} | — | implemented |
 
 ## Agents / discovery (3)
 
@@ -486,10 +486,12 @@ structured `501`. The official boot and session flows are live:
 8. **Credentials, MCP, models** — credential reads are real (env-only); vault
    writes, MCP loading, model slots/endpoints and provider-library writes remain
    partial because the backing subsystems do not exist.
-9. **Sentinel channels, global data, Claude Code queens** — Sentinel local
-   config/inbox and credential presence are implemented; Telegram/Slack
-   transports, the global team database and Claude Code transcripts are explicit
-   4xx/empty partials, not simulated successes.
+9. **Sentinel channels, Claude Code queens** — Sentinel local config/inbox and
+   credential presence are implemented; Telegram/Slack transports and Claude
+   Code transcripts are explicit 4xx/empty partials, not simulated successes.
+   The global team DB is implemented locally (`hiveHome()/global-data/team.db`);
+   it is not the cloud proxy Hive forwards to, so cross-machine team sync has no
+   equivalent here.
 
 Cross-cutting requirements for every route: JSON error body
 `{error, type?}`, `/api` base, CORS on the same origin, and static-before-param

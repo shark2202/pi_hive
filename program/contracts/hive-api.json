@@ -43,7 +43,7 @@
     "derivation": "api.get/post/put/patch/delete/upload + apiUrl + subscribeSse call sites, plus the exported types in src/api/types.ts"
   },
   "generated_at": "2026-11-19T10:10:50.368Z",
-  "revised_at": "2026-11-20T03:25:14+08:00",
+  "revised_at": "2026-11-20T08:49:39+08:00",
   "revision": "1.3.0",
   "domains": [
     "colonies",
@@ -93,8 +93,8 @@
       "workers": 7
     },
     "by_status": {
-      "implemented": 130,
-      "partial": 41,
+      "implemented": 139,
+      "partial": 32,
       "shell-only": 0,
       "missing": 0
     },
@@ -1134,8 +1134,8 @@
       "response_type": "{tables: TableOverview[]}",
       "sse": false,
       "sse_events": [],
-      "pi_hive_status": "partial",
-      "notes": "Partial compatibility: no global team DB: valid empty {tables: []} plus an explicit reason.",
+      "pi_hive_status": "implemented",
+      "notes": "tables in hiveHome()/global-data/team.db with columns, primary key and row counts",
       "source": "globalData.ts:78",
       "query": []
     },
@@ -1149,8 +1149,8 @@
       "response_type": "GlobalChangesResponse",
       "sse": false,
       "sse_events": [],
-      "pi_hive_status": "partial",
-      "notes": "Partial compatibility: no global team DB: empty cursor/coverage envelope plus an explicit reason.",
+      "pi_hive_status": "implemented",
+      "notes": "_global_changes feed after a cursor; no cursor is the init call (cursor + coverage only)",
       "source": "globalData.ts:83",
       "query": [
         {
@@ -1170,8 +1170,8 @@
       "response_type": "TableRowsResponse",
       "sse": false,
       "sse_events": [],
-      "pi_hive_status": "partial",
-      "notes": "Partial compatibility: no global team DB: explicit 404 global_data_unavailable.",
+      "pi_hive_status": "implemented",
+      "notes": "paginated rows, limit <= 500, order_by/order_dir, 404 for an unknown table",
       "source": "globalData.ts:102",
       "query": [
         {
@@ -1206,8 +1206,8 @@
       "response_type": "{updated}",
       "sse": false,
       "sse_events": [],
-      "pi_hive_status": "partial",
-      "notes": "Partial compatibility: no global team DB: explicit 404 global_data_unavailable.",
+      "pi_hive_status": "implemented",
+      "notes": "single-row update addressed by the full primary key; stamps updated_at",
       "source": "globalData.ts:108",
       "query": []
     },
@@ -1221,8 +1221,8 @@
       "response_type": "TableRowsResponse",
       "sse": false,
       "sse_events": [],
-      "pi_hive_status": "partial",
-      "notes": "Partial compatibility: no global team DB: explicit 404 global_data_unavailable.",
+      "pi_hive_status": "implemented",
+      "notes": "server-side filter/search/sort; 11 comparison ops on live columns",
       "source": "globalData.ts:116",
       "query": []
     },
@@ -1236,8 +1236,8 @@
       "response_type": "{table, group_by, groups: GroupCount[]}",
       "sse": false,
       "sse_events": [],
-      "pi_hive_status": "partial",
-      "notes": "Partial compatibility: no global team DB: explicit 404 global_data_unavailable.",
+      "pi_hive_status": "implemented",
+      "notes": "distinct values of group_by with accurate counts, highest first",
       "source": "globalData.ts:135",
       "query": []
     },
@@ -1251,8 +1251,8 @@
       "response_type": "{inserted, pk}",
       "sse": false,
       "sse_events": [],
-      "pi_hive_status": "partial",
-      "notes": "Partial compatibility: no global team DB: explicit 404 global_data_unavailable.",
+      "pi_hive_status": "implemented",
+      "notes": "true insert with a minted primary key; 409 {error:'conflict', pk} on duplicates",
       "source": "globalData.ts:150",
       "query": []
     },
@@ -1266,8 +1266,8 @@
       "response_type": "{deleted}",
       "sse": false,
       "sse_events": [],
-      "pi_hive_status": "partial",
-      "notes": "Partial compatibility: no global team DB: explicit 404 global_data_unavailable.",
+      "pi_hive_status": "implemented",
+      "notes": "delete one row by primary key",
       "source": "globalData.ts:157",
       "query": []
     },
@@ -1281,8 +1281,8 @@
       "response_type": "{foreign_keys: ForeignKey[]}",
       "sse": false,
       "sse_events": [],
-      "pi_hive_status": "partial",
-      "notes": "Partial compatibility: no global team DB: valid empty {foreign_keys: []} plus an explicit reason.",
+      "pi_hive_status": "implemented",
+      "notes": "edges inferred from <table>_id columns pointing at real tables",
       "source": "globalData.ts:164",
       "query": []
     },

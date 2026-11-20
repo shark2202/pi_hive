@@ -4,15 +4,17 @@ import { DatabaseSync } from "node:sqlite";
 import { colonyPaths } from "./colony.js";
 
 const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
-
+/** The colony's tracker.db, opened through the same wrapper as any other file. */
 export function openTracker(colonyName) {
-  const { tracker } = colonyPaths(colonyName);
-  fs.mkdirSync(path.dirname(tracker), { recursive: true });
-  const db = new DatabaseSync(tracker);
+  return openTrackerAt(colonyPaths(colonyName).tracker);
+}
+export function openTrackerAt(file) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const db = new DatabaseSync(file);
   db.exec("PRAGMA journal_mode = WAL");
   return {
     db,
-    path: tracker,
+    path: file,
     exec(sql) {
       db.exec(sql);
       return { ok: true };

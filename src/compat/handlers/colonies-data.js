@@ -42,14 +42,8 @@ const DEFAULT_ROW_LIMIT = 100;
 /** Bound on change-log rows read per poll; keeps one poll cheap. */
 const CHANGE_SCAN_LIMIT = 5000;
 
-/** Why every /global/data route is empty or refuses. */
-export const GLOBAL_DATA_REASON =
-  "pi_hive has no global team database; the official /global/data surface proxies a cloud team DB this host does not configure";
+/** The 10 colony method+pattern pairs this module owns, in contract order. */
 
-/** Stable error code for the absent global database. */
-export const GLOBAL_DATA_CODE = "global_data_unavailable";
-
-/** The 19 method+pattern pairs this module owns, in contract order. */
 export const COLONIES_DATA_ROUTES = Object.freeze([
   ["POST", "/api/colonies/:colony/scaffold"],
   ["GET", "/api/colony/:colony/tools"],
@@ -61,15 +55,6 @@ export const COLONIES_DATA_ROUTES = Object.freeze([
   ["GET", "/api/colonies/:colony/data/tables/:table/rows"],
   ["GET", "/api/colonies/:colony/data/changes"],
   ["PATCH", "/api/colonies/:colony/data/tables/:table/rows"],
-  ["GET", "/api/global/data/tables"],
-  ["GET", "/api/global/data/changes"],
-  ["GET", "/api/global/data/tables/:table/rows"],
-  ["PATCH", "/api/global/data/tables/:table/rows"],
-  ["POST", "/api/global/data/tables/:table/query"],
-  ["POST", "/api/global/data/tables/:table/group-counts"],
-  ["POST", "/api/global/data/tables/:table/rows"],
-  ["DELETE", "/api/global/data/tables/:table/rows"],
-  ["GET", "/api/global/data/foreign-keys"],
 ].map(([method, routePath]) => Object.freeze({ method, path: routePath })));
 
 
@@ -921,53 +906,34 @@ async function handleUpdateRow({ req, params } = {}) {
   }
 }
 
-// --- global team database (absent in pi_hive) ------------------------------
-
-function globalUnavailable(extra = {}) {
-  return { available: false, code: GLOBAL_DATA_CODE, reason: GLOBAL_DATA_REASON, ...extra };
-}
-
-async function handleGlobalTables() {
-  return { status: 200, body: { tables: [], ...globalUnavailable() } };
-}
-
-async function handleGlobalChanges() {
-  return {
-    status: 200,
-    body: {
-      cursor: null,
-      covered: [],
-      truncated: false,
-      tables: {},
-      ...globalUnavailable(),
-    },
-  };
-}
-
-async function handleGlobalForeignKeys() {
-  return { status: 200, body: { foreign_keys: [], ...globalUnavailable() } };
-}
-
-/** Table-scoped global routes have no table to address, so they refuse. */
-function globalTableUnavailable(table) {
-  const label = typeof table === "string" && table ? ` table '${table}'` : "";
-  return fail(
-    404,
-    `global data${label} is unavailable: ${GLOBAL_DATA_REASON}`,
-    GLOBAL_DATA_CODE,
-    { available: false },
-  );
-}
-
-/** Table-scoped routes share one refusal; `params.table` is only for the message. */
-function handleGlobalTableRoute({ params } = {}) {
-  return globalTableUnavailable(params?.table);
-}
-
+/**
+ * Row machinery shared with the global team DB lane (`global-data.js`): the
+ * colony tracker and the global DB are both SQLite files read the same way.
+ */
+export {
+  IDENT,
+  bindCell,
+  cellToJson,
+  fail,
+  intQuery,
+  isCellValue,
+  isPlainObject,
+  listUserTables,
+  plainRow,
+  primaryKeyOf,
+  queryParam,
+  quoteIdent,
+  readJsonBody,
+  rowCount,
+  rowsOrderClause,
+  tableColumns,
+  tableExists,
+  tableOverview,
+};
 // --- registration ----------------------------------------------------------
 
 /**
- * Register the 19 colony-management and data-browser routes.
+ * Register the 10 colony-management and data-browser routes.
  *
  * @param {import("../router.js").RouteRegistry} registry
  * @param {object} [ctx] dispatcher context (accepted for parity; unused)
@@ -976,7 +942,7 @@ export function registerColoniesDataRoutes(registry, ctx = {}) {
   if (!registry || typeof registry.register !== "function") {
     throw new TypeError("registerColoniesDataRoutes requires a RouteRegistry");
   }
-  // Kept intentionally unused: no pi_hive subsystem backs /global/data.
+  // Kept intentionally unused: these handlers read the filesystem, not ctx.
   void ctx;
 
   const add = (method, routePath, handler, status, description) =>
@@ -1010,24 +976,6 @@ export function registerColoniesDataRoutes(registry, ctx = {}) {
   add("PATCH", "/colonies/:colony/data/tables/:table/rows", handleUpdateRow, IMPLEMENTED,
     "parameterized single-row update addressed by primary key");
 
-  add("GET", "/global/data/tables", handleGlobalTables, PARTIAL,
-    "no global team DB: valid empty {tables: []} plus an explicit reason");
-  add("GET", "/global/data/changes", handleGlobalChanges, PARTIAL,
-    "no global team DB: empty cursor/coverage envelope plus an explicit reason");
-  add("GET", "/global/data/tables/:table/rows", handleGlobalTableRoute, PARTIAL,
-    "no global team DB: explicit 404 global_data_unavailable");
-  add("PATCH", "/global/data/tables/:table/rows", handleGlobalTableRoute, PARTIAL,
-    "no global team DB: explicit 404 global_data_unavailable");
-  add("POST", "/global/data/tables/:table/query", handleGlobalTableRoute, PARTIAL,
-    "no global team DB: explicit 404 global_data_unavailable");
-  add("POST", "/global/data/tables/:table/group-counts", handleGlobalTableRoute, PARTIAL,
-    "no global team DB: explicit 404 global_data_unavailable");
-  add("POST", "/global/data/tables/:table/rows", handleGlobalTableRoute, PARTIAL,
-    "no global team DB: explicit 404 global_data_unavailable");
-  add("DELETE", "/global/data/tables/:table/rows", handleGlobalTableRoute, PARTIAL,
-    "no global team DB: explicit 404 global_data_unavailable");
-  add("GET", "/global/data/foreign-keys", handleGlobalForeignKeys, PARTIAL,
-    "no global team DB: valid empty {foreign_keys: []} plus an explicit reason");
 
   return registry;
 }
