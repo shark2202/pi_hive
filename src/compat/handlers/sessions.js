@@ -217,7 +217,7 @@ async function readJsonBody(req) {
   return {};
 }
 
-async function readRawBody(req) {
+export async function readRawBody(req) {
   if (!req) return Buffer.alloc(0);
   if (Buffer.isBuffer(req.rawBody)) return req.rawBody;
   if (Buffer.isBuffer(req.body)) return req.body;

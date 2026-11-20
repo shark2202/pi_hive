@@ -71,7 +71,8 @@
 | Skills discovery | ✅ | `skills/*/SKILL.md` |
 | `write_skill` | ✅ | Colony scope |
 | Skill catalog in prompts | ✅ | Queen and Worker |
-| Global/queen skill scopes | ⬜ | Only colony scope |
+| Global/queen skill scopes | ✅ | Shared library `hiveHome()/skills/<name>/SKILL.md` via `POST /api/skills/upload`; queen scopes aggregate across her colonies |
+| Skill install requests | ✅ | Per-session queue under `hiveHome()/sessions/<id>/skill-installs.json`; approve installs into the shared library, deny drops it (`queen_told: false` — no inbound channel exists) |
 | Memory read/write/search | ✅ | global, queen, colony scopes |
 | Memory reflection | ⬜ | No cooldown reflection/consolidation |
 | Recall selector | ⬜ | No semantic/keyword selector; prompt reads memory directly |
@@ -120,7 +121,7 @@
 
 | Feature | Status | Notes |
 |---|---|---|
-| HTTP API | 🟡 | 171 official routes: 154 implemented + 17 partial + 0 missing; every partial is an explicit 4xx, never a fake success |
+| HTTP API | 🟡 | 171 official routes: 157 implemented + 14 partial + 0 missing; every partial is an explicit 4xx, never a fake success |
 | SSE | ✅ | Per-session events replay + tail from the durable `events.jsonl`; chat deltas + colony events |
 | CLI | 🟡 | serve/colony/chat/worker/playbook/tracker; no skill/mcp/janitor |
 | Official Hive frontend (forked at `frontend/`, built here) | ✅ | Fork source + dist live in this repo; served at `/`; desktop chat verified end-to-end (Queen reply over SSE, last verified 2026-11-19 — not re-run: no model key in this environment); mobile official layout is desktop-first and squeezed |
@@ -153,7 +154,7 @@ A feature is ✅ only when:
 
 ## Next milestones
 
-1. **API behavior**: close the 32 remaining partial rows (MCP loader, Telegram/Slack, Claude Code peer, compaction, credential writes, prompts, skills upload, agents); route surface is complete.
+1. **API behavior**: close the 14 remaining partial rows (credential vault writes, Telegram/Slack transports, Claude Code transcripts, compaction, Soul probe/reflect); route surface is complete.
 2. **Memory reflection**: cooldown reflection and consolidation (Soul proposals exist).
 3. **MCP and browser/web tools**: load MCP servers; add browser/web tools.
 4. **Sentinel channels**: Telegram/Slack + escalation policy.

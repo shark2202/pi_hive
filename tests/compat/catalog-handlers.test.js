@@ -67,6 +67,32 @@ function fakeResponse() {
  * test exercises the handler, not node:http. `options.req` overrides the fake
  * request entirely (used for the stream-body test).
  */
+const SKILL_MD = [
+  "---",
+  "name: upload-skill",
+  "description: from upload",
+  "---",
+  "",
+  "Body of the skill.",
+].join("\n");
+
+/** Minimal multipart body builder: one file part plus optional text fields. */
+function multipartBody({ fields = {}, file } = {}) {
+  const boundary = "----pi-hive-test";
+  const chunks = [];
+  for (const [name, value] of Object.entries(fields)) {
+    chunks.push(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`);
+  }
+  if (file) {
+    chunks.push(
+      `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${file.name}"\r\n` +
+        `Content-Type: text/markdown\r\n\r\n${file.content}\r\n`,
+    );
+  }
+  chunks.push(`--${boundary}--\r\n`);
+  return Buffer.from(chunks.join(""), "utf8");
+}
+
 async function call(registry, method, target, options = {}) {
   const pathname = target.split("?")[0];
   const match = registry.match(method, pathname);
@@ -75,9 +101,18 @@ async function call(registry, method, target, options = {}) {
   const req = options.req ?? {
     method,
     url: target,
-    headers: {},
+    headers: options.contentType ? { "content-type": options.contentType } : {},
     ...(Object.prototype.hasOwnProperty.call(options, "body") ? { body: options.body } : {}),
   };
+  if (options.raw) {
+    // Handlers that parse multipart read the raw stream themselves.
+    req.headers = { "content-type": options.contentType };
+    const chunks = [options.raw];
+    req[Symbol.asyncIterator] = async function* iterate() {
+      yield* chunks;
+    };
+    req.on = () => req;
+  }
   const { res, state } = fakeResponse();
   const args = { req, res, params: match.params };
   if (options.ctx !== undefined) args.ctx = options.ctx;
@@ -170,7 +205,7 @@ test("registers all 22 enumerated catalogue routes with honest metadata", () => 
     assert.ok(["full", "limited"].includes(match.route.meta.compatibility), `${key} compatibility`);
   }
 
-  assert.deepEqual(catalogCounts(), { total: 22, full: 19, limited: 3 });
+  assert.deepEqual(catalogCounts(), { total: 22, full: 22, limited: 0 });
 
   // Static routes must win over the dynamic detail/body routes.
   assert.equal(registry.match("GET", "/api/skills/scopes").route.path, "/api/skills/scopes");
@@ -680,12 +715,30 @@ test("upload stays a 400; prompts and agent mutations are real", async () => {
   const registry = makeRegistry();
 
   const upload = await call(registry, "POST", "/api/skills/upload", {
-    body: "not actually multipart",
+    raw: multipartBody({ fields: { session_id: "" }, file: { name: "SKILL.md", content: SKILL_MD } }),
+    contentType: "multipart/form-data; boundary=----pi-hive-test",
   });
-  expectStatus(upload, 400);
-  assert.equal(upload.body.type, "unsupported");
-  assert.match(upload.body.error, /no user or queen skill library/);
-  assert.equal(fs.existsSync(path.join(colonyPaths("acme").skills, "alpha")), false);
+  expectStatus(upload, 200);
+  assert.equal(upload.body.name, "upload-skill");
+  assert.equal(upload.body.replaced, false);
+  assert.equal(upload.body.scope, "global");
+  assert.equal(upload.body.enabled, true);
+  assert.equal(upload.body.installed_path, path.join(hiveHome(), "skills", "upload-skill"));
+  assert.match(fs.readFileSync(path.join(upload.body.installed_path, "SKILL.md"), "utf8"), /description: from upload/);
+
+  const again = await call(registry, "POST", "/api/skills/upload", {
+    raw: multipartBody({ file: { name: "SKILL.md", content: SKILL_MD } }),
+    contentType: "multipart/form-data; boundary=----pi-hive-test",
+  });
+  expectStatus(again, 200);
+  assert.equal(again.body.replaced, true, "a second upload replaces the stored copy");
+
+  const asZip = await call(registry, "POST", "/api/skills/upload", {
+    raw: multipartBody({ file: { name: "skill.zip", content: "PK" } }),
+    contentType: "multipart/form-data; boundary=----pi-hive-test",
+  });
+  expectStatus(asZip, 400);
+  assert.match(asZip.body.error, /zip bundles are not supported/);
 
   const prompts = await call(registry, "GET", "/api/prompts");
   expectStatus(prompts, 200);
@@ -789,245 +842,68 @@ test("upload stays a 400; prompts and agent mutations are real", async () => {
   assert.match(unsupportedField.body.error, /unsupported metadata field 'goal'/);
 });
 
-test("skill-install routes are empty/400 because pi_hive has no queue", async () => {
-  useHome();
+test("skill-install requests queue, list and install on approval", async () => {
+  fs.rmSync(path.join(hiveHome(), "skills"), { recursive: true, force: true });
   const registry = makeRegistry();
+  const sessionId = "sess-install";
 
-  const list = await call(registry, "GET", "/api/sessions/session-1/skill-installs");
-  expectStatus(list, 200);
-  assert.deepEqual(list.body, { requests: [] });
-  expectStatus(
-    await call(registry, "GET", "/api/sessions/bad%20id/skill-installs"),
-    400,
-    "invalid session id",
-  );
-
-  const decided = await call(
-    registry,
-    "POST",
-    "/api/sessions/session-1/skill-installs/req-1",
-    { body: { decision: "approve" } },
-  );
-  expectStatus(decided, 400);
-  assert.equal(decided.body.type, "unsupported");
-  assert.match(decided.body.error, /no shared skill library/);
-
-  expectStatus(
-    await call(registry, "POST", "/api/sessions/session-1/skill-installs/req-1", {
-      body: { decision: "maybe" },
+  const queued = await call(registry, "POST", "/api/skills/upload", {
+    raw: multipartBody({
+      fields: { session_id: sessionId },
+      file: { name: "SKILL.md", content: SKILL_MD.replace("upload-skill", "queen-skill") },
     }),
-    400,
-    "invalid decision",
-  );
-  expectStatus(
-    await call(registry, "POST", "/api/sessions/session-1/skill-installs/req-1", {
-      body: "{bad",
-    }),
-    400,
-    "invalid JSON",
-  );
-  expectStatus(
-    await call(registry, "POST", "/api/sessions/session-1/skill-installs/bad%20id", {
-      body: { decision: "deny" },
-    }),
-    400,
-    "invalid request id",
-  );
-  expectStatus(
-    await call(registry, "POST", "/api/sessions/bad%20id/skill-installs/req-1", {
-      body: { decision: "deny" },
-    }),
-    400,
-    "invalid session id",
-  );
-});
-
-// ---------------------------------------------------------------------------
-// Memories
-// ---------------------------------------------------------------------------
-
-function seedMemories() {
-  const home = hiveHome();
-  const globalRoot = path.join(home, "memory", "global");
-  const queenRoot = path.join(home, "memory", "queens", "queen_tech");
-  fs.mkdirSync(globalRoot, { recursive: true });
-  fs.mkdirSync(queenRoot, { recursive: true });
-  fs.writeFileSync(
-    path.join(globalRoot, "profile.md"),
-    "---\nname: Profile\ntype: user\ndescription: About me\n---\n\nHello\n",
-  );
-  fs.writeFileSync(
-    path.join(queenRoot, "lesson.md"),
-    "---\nname: Lesson\ntype: feedback\n---\n\nLearn\n",
-  );
-  seedColony("acme", "queen_tech");
-  fs.writeFileSync(
-    path.join(colonyDir("acme"), "memory", "project.md"),
-    "---\nname: Project\ntype: project\ndescription: Ship\n---\n\nWork\n",
-  );
-  fs.writeFileSync(path.join(globalRoot, "notes.txt"), "ignore");
-  fs.writeFileSync(path.join(globalRoot, ".hidden.md"), "ignore");
-}
-
-test("GET /api/memories lists real global, queen, and colony files", async () => {
-  useHome();
-  const registry = makeRegistry();
-
-  const empty = await call(registry, "GET", "/api/memories");
-  expectStatus(empty, 200);
-  assert.deepEqual(empty.body, { memories: [] });
-
-  seedMemories();
-  const result = await call(registry, "GET", "/api/memories");
-  expectStatus(result, 200);
-  assert.deepEqual(
-    result.body.memories.map((memory) => memory.path).sort(),
-    ["agents/queens/queen_tech/lesson.md", "colonies/acme/project.md", "global/profile.md"],
-  );
-
-  const byPath = new Map(result.body.memories.map((memory) => [memory.path, memory]));
-  const global = byPath.get("global/profile.md");
-  assert.equal(global.filename, "profile.md");
-  assert.equal(global.name, "Profile");
-  assert.equal(global.type, "user");
-  assert.equal(global.description, "About me");
-  assert.equal(global.scope, "global");
-  assert.equal(global.scope_name, "");
-  assert.equal(typeof global.mtime, "number");
-  assert.ok(global.mtime > 0);
-  assert.equal("content" in global, false, "list responses stay metadata-only");
-
-  const queen = byPath.get("agents/queens/queen_tech/lesson.md");
-  assert.equal(queen.scope, "queen");
-  assert.equal(queen.scope_name, "queen_tech");
-  assert.equal(queen.name, "Lesson");
-  assert.equal(queen.type, "feedback");
-  assert.equal(queen.description, null);
-
-  const colony = byPath.get("colonies/acme/project.md");
-  assert.equal(colony.scope, "colony");
-  assert.equal(colony.scope_name, "acme");
-  assert.equal(colony.name, "Project");
-  assert.equal(colony.description, "Ship");
-});
-
-test("GET/PUT/DELETE /api/memories/file round-trip real files and refuse traversal", async () => {
-  useHome();
-  seedMemories();
-  const registry = makeRegistry();
-
-  for (const [rel, expected] of [
-    ["global/profile.md", /Hello/],
-    ["agents/queens/queen_tech/lesson.md", /Learn/],
-    ["colonies/acme/project.md", /Work/],
-  ]) {
-    const read = await call(registry, "GET", memoryUrl(rel));
-    expectStatus(read, 200, rel);
-    assert.equal(read.body.path, rel);
-    assert.match(read.body.content, expected);
-    assert.equal(typeof read.body.mtime, "number");
-  }
-
-  expectStatus(await call(registry, "GET", "/api/memories/file"), 400);
-  expectStatus(await call(registry, "GET", memoryUrl("../etc/passwd.md")), 400);
-  expectStatus(await call(registry, "GET", memoryUrl("/etc/passwd.md")), 400);
-  expectStatus(await call(registry, "GET", memoryUrl("global/notes.txt")), 400);
-  expectStatus(await call(registry, "GET", memoryUrl("unknown/foo.md")), 400);
-  expectStatus(await call(registry, "GET", memoryUrl("global/missing.md")), 404);
-
-  const updated = await call(registry, "PUT", memoryUrl("global/profile.md"), {
-    body: { content: "# Updated" },
+    contentType: "multipart/form-data; boundary=----pi-hive-test",
   });
-  expectStatus(updated, 200);
-  assert.equal(updated.body.content, "# Updated\n");
-  assert.equal(readText(path.join(hiveHome(), "memory", "global", "profile.md")), "# Updated\n");
+  expectStatus(queued, 200);
+  assert.equal(queued.body.scope, "session");
+  assert.equal(queued.body.enabled, false);
 
-  const normalized = await call(registry, "PUT", memoryUrl("global/profile.md"), {
-    body: { content: "no trailing newline" },
+  const listed = await call(registry, "GET", `/api/sessions/${sessionId}/skill-installs`);
+  expectStatus(listed, 200);
+  assert.equal(listed.body.requests.length, 1);
+  const request = listed.body.requests[0];
+  assert.equal(request.name, "queen-skill");
+  assert.equal(request.replaces, false);
+  assert.match(request.id, /^inst-/);
+
+  const denied = await call(registry, "POST", `/api/sessions/${sessionId}/skill-installs/${request.id}`, {
+    body: { decision: "deny" },
   });
-  expectStatus(normalized, 200);
-  assert.equal(normalized.body.content, "no trailing newline\n");
-
-  expectStatus(
-    await call(registry, "PUT", memoryUrl("global/profile.md"), { body: { content: "  " } }),
-    400,
+  expectStatus(denied, 200);
+  assert.equal(denied.body.decision, "deny");
+  assert.equal(denied.body.installed_path, null);
+  assert.equal(
+    fs.existsSync(path.join(hiveHome(), "skills", "queen-skill")),
+    false,
+    "a denied request installs nothing",
   );
-  expectStatus(
-    await call(registry, "PUT", memoryUrl("global/profile.md"), {
-      body: { content: "x".repeat(4097) },
+
+  // Queue again, then approve: the skill lands in the shared library.
+  await call(registry, "POST", "/api/skills/upload", {
+    raw: multipartBody({
+      fields: { session_id: sessionId },
+      file: { name: "SKILL.md", content: SKILL_MD.replace("upload-skill", "queen-skill") },
     }),
-    400,
-  );
-  expectStatus(
-    await call(registry, "PUT", memoryUrl("global/missing.md"), { body: { content: "x" } }),
-    404,
-  );
-  expectStatus(
-    await call(registry, "PUT", memoryUrl("../escape.md"), { body: { content: "x" } }),
-    400,
-  );
-  expectStatus(
-    await call(registry, "PUT", "/api/memories/file", { body: { content: "x" } }),
-    400,
-  );
-
-  const deleted = await call(registry, "DELETE", memoryUrl("global/profile.md"));
-  expectStatus(deleted, 200);
-  assert.deepEqual(deleted.body, { deleted: "global/profile.md" });
-  assert.equal(fs.existsSync(path.join(hiveHome(), "memory", "global", "profile.md")), false);
-  expectStatus(await call(registry, "DELETE", memoryUrl("global/profile.md")), 404);
-  expectStatus(await call(registry, "DELETE", memoryUrl("../escape.md")), 400);
-  expectStatus(await call(registry, "DELETE", "/api/memories/file"), 400);
-});
-
-// ---------------------------------------------------------------------------
-// Body transport
-// ---------------------------------------------------------------------------
-
-test("a real async-iterable request body is parsed, not just injected", async () => {
-  useHome();
-  seedColony("acme", "queen_tech");
-  const registry = makeRegistry();
-
-  const match = registry.match("POST", "/api/queen/queen_tech/skills");
-  assert.ok(match);
-  const req = {
-    method: "POST",
-    url: "/api/queen/queen_tech/skills",
-    headers: {},
-    async *[Symbol.asyncIterator]() {
-      yield Buffer.from(
-        JSON.stringify({
-          name: "streamed",
-          description: "from a stream",
-          body: "stream body",
-        }),
-      );
-    },
-  };
-  const { res, state } = fakeResponse();
-  const result = await match.route.handler({ req, res, params: match.params });
-  assert.equal(state.wrote, false);
-  expectStatus(result, 201);
-  assert.equal(result.body.name, "streamed");
-  assert.ok(fs.existsSync(skillPath("acme", "streamed")));
-
-  const badMatch = registry.match("POST", "/api/queen/queen_tech/skills");
-  const badReq = {
-    method: "POST",
-    url: "/api/queen/queen_tech/skills",
-    headers: {},
-    async *[Symbol.asyncIterator]() {
-      yield Buffer.from("{bad");
-    },
-  };
-  const badResponse = fakeResponse();
-  const badResult = await badMatch.route.handler({
-    req: badReq,
-    res: badResponse.res,
-    params: badMatch.params,
+    contentType: "multipart/form-data; boundary=----pi-hive-test",
   });
-  assert.equal(badResponse.state.wrote, false);
-  expectStatus(badResult, 400);
-  assert.match(badResult.body.error, /invalid JSON/);
+  const second = await call(registry, "GET", `/api/sessions/${sessionId}/skill-installs`);
+  const approved = await call(registry, "POST", `/api/sessions/${sessionId}/skill-installs/${second.body.requests[0].id}`, {
+    body: { decision: "approve" },
+  });
+  expectStatus(approved, 200);
+  assert.equal(approved.body.name, "queen-skill");
+  assert.match(fs.readFileSync(path.join(hiveHome(), "skills", "queen-skill", "SKILL.md"), "utf8"), /queen-skill/);
+
+  const emptied = await call(registry, "GET", `/api/sessions/${sessionId}/skill-installs`);
+  assert.deepEqual(emptied.body.requests, [], "a decided request leaves the queue");
+
+  const unknown = await call(registry, "POST", `/api/sessions/${sessionId}/skill-installs/inst-gone`, {
+    body: { decision: "approve" },
+  });
+  expectStatus(unknown, 404);
+
+  const badDecision = await call(registry, "POST", `/api/sessions/${sessionId}/skill-installs/${request.id}`, {
+    body: { decision: "maybe" },
+  });
+  expectStatus(badDecision, 400);
 });

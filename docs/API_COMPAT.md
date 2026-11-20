@@ -231,14 +231,14 @@ _pi_hive:_ 4 implemented, 3 partial. Per-colony notification config, the local i
 
 ## Skills (14)
 
-_pi_hive:_ 11 implemented, 3 partial. Scope-less and queen-scoped skill read/create/edit/rename/delete operate on real colony SKILL.md files; multipart library upload and the session install-request queue are explicit 400/empty partials.
+_pi_hive:_ 14 implemented. Scope-less and queen-scoped skill read/create/edit/rename/delete operate on real colony SKILL.md files. `POST /skills/upload` installs a multipart SKILL.md (and any extra text files) into the shared library `hiveHome()/skills/<name>/`, reporting `replaced: true` when it overwrites one; a `session_id` form field queues an install request instead, and `.zip` bundles are refused. The per-session queue (`hiveHome()/sessions/<id>/skill-installs.json`) lists queued requests and `POST .../:install` approves (installs into the library) or denies, then removes it from the queue.
 
 | Method | Path | Client (source) | Request | Response | SSE events | pi_hive |
 |---|---|---|---|---|---|---|
 | GET | `/skills` | skills (`skills.ts:107`) | — | AggregatedSkillsResponse | — | implemented |
 | GET | `/skills/scopes` | skills (`skills.ts:108`) | — | SkillScopesResponse | — | implemented |
 | GET | `/skills/:skill` | skills (`skills.ts:110`) | — | SkillDetailResponse | — | implemented |
-| POST | `/skills/upload` | skills (`skills.ts:176`) | multipart form-data (SKILL.md or .zip) | {name, installed_path, replaced, scope, target_id, enabled} | — | partial |
+| POST | `/skills/upload` | skills (`skills.ts:176`) | multipart form-data (SKILL.md or .zip) | {name, installed_path, replaced, scope, target_id, enabled} | — | implemented |
 | GET | `/queen/:queen/skills` | skills (`skills.ts:114`) | — | ScopeSkillsResponse | — | implemented |
 | POST | `/queen/:queen/skills` | skills (`skills.ts:117`) | SkillCreatePayload | SkillRow | — | implemented |
 | PATCH | `/queen/:queen/skills/:skill` | skills (`skills.ts:120`) | SkillPatchPayload | {name, enabled: boolean\|null, ok} | — | implemented |
@@ -247,8 +247,8 @@ _pi_hive:_ 11 implemented, 3 partial. Scope-less and queen-scoped skill read/cre
 | POST | `/queen/:queen/skills/:skill/rename` | skills (`skills.ts:143`) | inline {new_name} | {old_name, new_name, ok} | — | implemented |
 | DELETE | `/queen/:queen/skills/:skill` | skills (`skills.ts:149`) | — | {name, removed} | — | implemented |
 | POST | `/queen/:queen/skills/reload` | skills (`skills.ts:154`) | — | {ok} | — | implemented |
-| GET | `/sessions/:session/skill-installs` | skills (`skills.ts:160`) | — | {requests: SkillInstallRequest[]} | — | partial |
-| POST | `/sessions/:session/skill-installs/:install` | skills (`skills.ts:169`) | inline {decision: 'approve'\|'deny'} | {name, decision, queen_told} | — | partial |
+| GET | `/sessions/:session/skill-installs` | skills (`skills.ts:160`) | — | {requests: SkillInstallRequest[]} | — | implemented |
+| POST | `/sessions/:session/skill-installs/:install` | skills (`skills.ts:169`) | inline {decision: 'approve'\|'deny'} | {name, decision, queen_told} | — | implemented |
 
 ## Tasks (3)
 
@@ -481,8 +481,7 @@ structured `501`. The official boot and session flows are live:
 6. **Configuration** — reads and `/startup-status` are implemented; writes that
    need a persistent store are explicit `400 unsupported_capability`.
 7. **Skills, prompts, memories** — skills and memories operate on real files;
-   prompt creation/deletion and skill library upload/install requests are
-   explicit 400 partials.
+   credential writes remain explicit 400 partials.
 8. **Credentials, models** — credential reads are real (env-only); vault writes,
    model slots/endpoints remain partial because the backing subsystems do not
    exist. MCP definitions and reachability probes are real, but no MCP tool is

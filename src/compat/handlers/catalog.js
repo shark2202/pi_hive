@@ -34,6 +34,17 @@ import { coloniesDir, colonyDir, hiveHome } from "../../config.js";
 import { colonyPaths, loadMetadata, saveMetadata } from "../../domain/colony.js";
 import { listSkills } from "../../domain/skills.js";
 import { createPrompt as storeCreatePrompt, deletePrompt as storeDeletePrompt, listPrompts as storeListPrompts } from "../../domain/prompt-store.js";
+import {
+  decideRequest as decideInstallRequest,
+  installSkill as installLibrarySkill,
+  listLibrarySkills,
+  normalizeSkillName,
+  parseSkillMarkdown,
+  queueRequest as queueInstallRequest,
+  readRequests as readInstallRequests,
+  validSkillName,
+} from "../../domain/skill-library.js";
+import { parseMultipart, readRawBody } from "./sessions.js";
 import { ROUTE_STATUS } from "../router.js";
 
 // ---------------------------------------------------------------------------
@@ -542,11 +553,63 @@ async function getSkillDetail(args) {
   });
 }
 
-async function uploadSkill() {
-  return failUnsupported(
-    "skill upload is not supported: pi_hive has no user or queen skill library; " +
-      "create colony skills through /api/queen/:queen/skills",
-  );
+/**
+ * `POST /api/skills/upload` — multipart SKILL.md into the shared library
+ * (`hiveHome()/skills/<name>`). A `session_id` field queues an install request
+ * for that session instead of installing, which is how a queen's proposal
+ * reaches the user. `.zip` bundles are refused: this host stores text files.
+ */
+async function uploadSkill(args) {
+  let parts;
+  try {
+    parts = parseMultipart(await readRawBody(args.req), args.req?.headers?.["content-type"]);
+  } catch (err) {
+    return fail(400, err?.message || "expected multipart/form-data with a file");
+  }
+  const filePart = parts.find((part) => (part.name === "file" || part.name === "files") && part.data?.length);
+  if (!filePart) return fail(400, "multipart field 'file' is required");
+  const fileName = String(filePart.filename || "");
+  if (/\.zip$/i.test(fileName)) {
+    return fail(400, "zip bundles are not supported: upload a SKILL.md (optionally with extra text files)");
+  }
+  const parsed = parseSkillMarkdown(filePart.data.toString("utf8"));
+  const name = normalizeSkillName(parsed.name || fileName.replace(/\.md$/i, ""));
+  if (!name) return fail(400, "could not read a skill name from the upload");
+  if (!validSkillName(name)) {
+    return fail(400, `skill name must be 1-64 characters of letters, digits, dash or underscore: '${name}'`);
+  }
+  const description = parsed.description || name;
+  const sessionId = parts.find((part) => part.name === "session_id")?.data?.toString("utf8").trim();
+  const extra = parts
+    .filter((part) => part !== filePart && part.filename && part.data?.length)
+    .map((part) => ({ path: String(part.filename).replace(/^\.\//, ""), content: part.data.toString("utf8") }));
+
+  if (sessionId) {
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(sessionId)) return fail(400, `invalid session id '${sessionId}'`);
+    const request = queueInstallRequest(sessionId, { name, description, body: parsed.body, files: extra });
+    return ok({
+      name,
+      installed_path: "",
+      replaced: request.replaces,
+      scope: "session",
+      target_id: sessionId,
+      enabled: false,
+    });
+  }
+
+  try {
+    const installed = installLibrarySkill({ name, description, body: parsed.body, files: extra });
+    return ok({
+      name,
+      installed_path: installed.installed_path,
+      replaced: installed.replaced,
+      scope: "global",
+      target_id: null,
+      enabled: true,
+    });
+  } catch (err) {
+    return fail(400, err.message);
+  }
 }
 
 async function getQueenSkills(args) {
@@ -869,9 +932,7 @@ async function listSkillInstalls(args) {
   if (!SESSION_ID_RE.test(String(sessionId || ""))) {
     return fail(400, `invalid session id '${sessionId || ""}'`);
   }
-  // pi_hive has no skill-install request queue and no runtime that writes
-  // one, so the honest collection is empty for every valid session id.
-  return ok({ requests: [] });
+  return ok({ requests: readInstallRequests(sessionId) });
 }
 
 async function decideSkillInstall(args) {
@@ -889,10 +950,20 @@ async function decideSkillInstall(args) {
     return fail(400, "decision must be 'approve' or 'deny'");
   }
 
-  return failUnsupported(
-    "skill install requests are not supported: pi_hive has no shared skill " +
-      "library or per-session install queue",
-  );
+  let decided;
+  try {
+    decided = decideInstallRequest(sessionId, installId, payload.decision);
+  } catch (err) {
+    return fail(400, err.message);
+  }
+  if (!decided) return fail(404, `install request '${installId}' not found`);
+  return ok({
+    name: decided.request.name,
+    decision: payload.decision,
+    // No inbound channel tells a queen about the decision; the queue is the record.
+    queen_told: false,
+    installed_path: decided.installed?.installed_path ?? null,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1303,8 +1374,8 @@ export const CATALOG_ROUTE_SPECS = Object.freeze(
     {
       method: "POST",
       path: "/api/skills/upload",
-      compatibility: LIMITED,
-      description: "explicit 400: multipart upload has no pi_hive target library",
+      compatibility: FULL,
+      description: "installs a multipart SKILL.md into hiveHome()/skills, or queues it for a session",
       handler: uploadSkill,
     },
     {
@@ -1366,15 +1437,15 @@ export const CATALOG_ROUTE_SPECS = Object.freeze(
     {
       method: "GET",
       path: "/api/sessions/:session/skill-installs",
-      compatibility: LIMITED,
-      description: "empty request list: pi_hive has no install-request queue",
+      compatibility: FULL,
+      description: "the session's queued skill-install requests",
       handler: listSkillInstalls,
     },
     {
       method: "POST",
       path: "/api/sessions/:session/skill-installs/:install",
-      compatibility: LIMITED,
-      description: "explicit 400: pi_hive has no install-request queue",
+      compatibility: FULL,
+      description: "approves (installs into the library) or denies a queued request; 404 unknown",
       handler: decideSkillInstall,
     },
     {
