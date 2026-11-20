@@ -71,6 +71,8 @@ const MCP_HINT =
 const MCP_HEALTH_NOTE =
   "Reachability only: pi_hive connects to the endpoint but loads no MCP tools, so tools always reports 0.";
 const MCP_PROBE_TIMEOUT_MS = 3000;
+const SENTINEL_HTTP_TIMEOUT_MS = 8000;
+
 const TELEGRAM_UNAVAILABLE =
   "pi_hive's Sentinel has a local inbox but no Telegram transport";
 const SLACK_UNAVAILABLE =
@@ -1305,6 +1307,53 @@ async function handleSentinelCredentials({ ctx }) {
   return ok(credentialStatus(ctx));
 }
 
+/**
+ * A real Telegram Bot API call. The token comes from the request or the saved
+ * sentinel config and is only used as a URL segment — never logged, echoed or
+ * returned.
+ */
+async function telegramApi(token, method, query = "") {
+  const url = `https://api.telegram.org/bot${token}/${method}${query}`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), SENTINEL_HTTP_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    const payload = await response.json().catch(() => null);
+    if (!payload || payload.ok !== true) {
+      const description = payload?.description || `HTTP ${response.status}`;
+      return { ok: false, error: description };
+    }
+    return { ok: true, result: payload.result };
+  } catch (err) {
+    const reason = err?.name === "AbortError" ? `no answer within ${SENTINEL_HTTP_TIMEOUT_MS} ms` : err?.message || String(err);
+    return { ok: false, error: reason };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Slack's `auth.test`, same rules: the token travels in a header, never in a response. */
+async function slackAuthTest(token) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), SENTINEL_HTTP_TIMEOUT_MS);
+  try {
+    const response = await fetch("https://slack.com/api/auth.test", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/x-www-form-urlencoded" },
+      signal: controller.signal,
+    });
+    const payload = await response.json().catch(() => null);
+    if (!payload) return { ok: false, error: `HTTP ${response.status}` };
+    if (payload.ok !== true) return { ok: false, error: payload.error || `HTTP ${response.status}` };
+    return { ok: true, result: payload };
+  } catch (err) {
+    const reason = err?.name === "AbortError" ? `no answer within ${SENTINEL_HTTP_TIMEOUT_MS} ms` : err?.message || String(err);
+    return { ok: false, error: reason };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function handleTelegramValidate({ req, ctx }) {
   const parsed = await readJsonBody(req);
   if (!parsed.ok) return fail(400, parsed.error);
@@ -1313,10 +1362,16 @@ async function handleTelegramValidate({ req, ctx }) {
   const provided = await providerResult(ctx, "validateTelegram", token || null);
   if (provided) return ok(provided);
   if (!token) return fail(400, "no token provided or saved", { ok: false });
-  return unavailable(400, TELEGRAM_UNAVAILABLE, {
-    what: "Telegram token validation is not available",
-    why: "pi_hive has no Telegram transport, so validating a token would not make messages deliverable.",
-    fix: "Use the local 'hive' inbox, or add the Telegram transport (token store + listener + sender).",
+
+  const probe = await telegramApi(token, "getMe");
+  if (!probe.ok) {
+    // A refused token is a real answer, not a broken capability.
+    return ok({ ok: false, error: probe.error });
+  }
+  return ok({
+    ok: true,
+    bot_username: probe.result?.username ?? null,
+    bot_name: probe.result?.first_name ?? null,
   });
 }
 
@@ -1327,10 +1382,24 @@ async function handleTelegramDetectChat({ req, ctx }) {
   const provided = await providerResult(ctx, "detectTelegramChat", token || null);
   if (provided) return ok(provided);
   if (!token) return fail(400, "save the bot token first", { ok: false });
-  return unavailable(400, TELEGRAM_UNAVAILABLE, {
-    what: "Telegram chat discovery is not available",
-    why: "getUpdates needs a configured Telegram bot listener, which pi_hive does not implement.",
-    fix: "Use the local 'hive' inbox, or add the Telegram transport first.",
+
+  // getUpdates reports messages the bot has not consumed yet, which is exactly
+  // how the desktop discovers a chat id for its own bot.
+  const probe = await telegramApi(token, "getUpdates", "?limit=10&timeout=0");
+  if (!probe.ok) return ok({ ok: false, pending: false, error: probe.error });
+  const updates = Array.isArray(probe.result) ? probe.result : [];
+  const message = updates.map((update) => update.message || update.edited_message || update.channel_post).find(Boolean);
+  if (!message) {
+    return ok({ ok: true, pending: true, chat_id: null, chat_title: null, sender_id: null, sender_name: null });
+  }
+  const sender = message.from || {};
+  return ok({
+    ok: true,
+    pending: false,
+    chat_id: message.chat?.id != null ? String(message.chat.id) : null,
+    chat_title: message.chat?.title ?? message.chat?.username ?? null,
+    sender_id: sender.id != null ? String(sender.id) : null,
+    sender_name: [sender.first_name, sender.last_name].filter(Boolean).join(" ") || sender.username || null,
   });
 }
 
@@ -1342,10 +1411,13 @@ async function handleSlackValidate({ req, ctx }) {
   const provided = await providerResult(ctx, "validateSlack", token || null);
   if (provided) return ok(provided);
   if (!token) return fail(400, "no token provided or saved", { ok: false });
-  return unavailable(400, SLACK_UNAVAILABLE, {
-    what: "Slack token validation is not available",
-    why: "pi_hive has no Slack transport, so auth.test would validate a token no delivery path uses.",
-    fix: "Use the local 'hive' inbox, or add the Slack transport (bot/app tokens + sender).",
+
+  const probe = await slackAuthTest(token);
+  if (!probe.ok) return ok({ ok: false, error: probe.error });
+  return ok({
+    ok: true,
+    team: probe.result?.team ?? null,
+    bot_user: probe.result?.user ?? null,
   });
 }
 
@@ -1757,22 +1829,22 @@ export function registerAutonomyRoutes(registry, ctx = {}) {
     {
       method: "POST",
       path: "/api/sentinel/telegram/validate",
-      status: PARTIAL,
-      description: "Telegram transport is not implemented; explicit 400 unless ctx provides a validator",
+      status: IMPLEMENTED,
+      description: "validates a bot token against Telegram getMe; a refused token answers ok:false",
       handler: handleTelegramValidate,
     },
     {
       method: "POST",
       path: "/api/sentinel/telegram/detect-chat",
-      status: PARTIAL,
+      status: IMPLEMENTED,
       description: "Telegram listener is not implemented; explicit 400 unless ctx provides a detector",
       handler: handleTelegramDetectChat,
     },
     {
       method: "POST",
       path: "/api/sentinel/slack/validate",
-      status: PARTIAL,
-      description: "Slack transport is not implemented; explicit 400 unless ctx provides a validator",
+      status: IMPLEMENTED,
+      description: "validates a bot token against Slack auth.test",
       handler: handleSlackValidate,
     },
 

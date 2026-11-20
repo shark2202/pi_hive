@@ -187,9 +187,9 @@ test("registers all 26 autonomy routes with honest statuses", () => {
     ["PUT /api/colony/:colony/notifications", ROUTE_STATUS.IMPLEMENTED],
     ["POST /api/colony/:colony/notifications/test", ROUTE_STATUS.IMPLEMENTED],
     ["GET /api/sentinel/credentials", ROUTE_STATUS.IMPLEMENTED],
-    ["POST /api/sentinel/telegram/validate", ROUTE_STATUS.PARTIAL],
-    ["POST /api/sentinel/telegram/detect-chat", ROUTE_STATUS.PARTIAL],
-    ["POST /api/sentinel/slack/validate", ROUTE_STATUS.PARTIAL],
+    ["POST /api/sentinel/telegram/validate", ROUTE_STATUS.IMPLEMENTED],
+    ["POST /api/sentinel/telegram/detect-chat", ROUTE_STATUS.IMPLEMENTED],
+    ["POST /api/sentinel/slack/validate", ROUTE_STATUS.IMPLEMENTED],
     ["GET /api/runtime-logs", ROUTE_STATUS.IMPLEMENTED],
     ["GET /api/browser/status", ROUTE_STATUS.IMPLEMENTED],
     ["GET /api/sessions/:session/tasks", ROUTE_STATUS.IMPLEMENTED],
@@ -215,8 +215,8 @@ test("registers all 26 autonomy routes with honest statuses", () => {
   }
 
   assert.deepEqual(registry.counts(), {
-    implemented: 23,
-    partial: 3,
+    implemented: 26,
+    partial: 0,
     missing: 0,
     total: 26,
   });
@@ -610,7 +610,7 @@ test("Sentinel credentials report token presence without exposing values", async
   });
 });
 
-test("Telegram/Slack validation returns explicit 4xx unless a provider is wired", async () => {
+test("Telegram/Slack validation really calls the transport and maps its answer", async () => {
   useHome();
   const registry = makeRegistry();
 
@@ -624,58 +624,75 @@ test("Telegram/Slack validation returns explicit 4xx unless a provider is wired"
   assert.equal(result.body.ok, false);
   assert.match(result.body.error, /no token provided or saved/);
 
-  result = await call(registry, "POST", "/api/sentinel/telegram/validate", {
-    body: { token: "123:abc" },
-  });
-  assert.equal(result.status, 400);
-  assert.equal(result.body.code, "integration_unavailable");
-  assert.match(result.body.error, /no Telegram transport/);
+  const originalFetch = globalThis.fetch;
+  const seen = [];
+  globalThis.fetch = async (url, options = {}) => {
+    seen.push({ url: String(url), options });
+    if (String(url).includes("getMe")) {
+      if (String(url).includes("bad")) {
+        return { status: 401, json: async () => ({ ok: false, description: "Unauthorized" }) };
+      }
+      return { status: 200, json: async () => ({ ok: true, result: { username: "hive_bot", first_name: "Hive" } }) };
+    }
+    if (String(url).includes("getUpdates")) {
+      return {
+        status: 200,
+        json: async () => ({
+          ok: true,
+          result: [{ update_id: 1, message: { chat: { id: 4242, title: "Ops" }, from: { id: 7, first_name: "Ada", last_name: "L" }, text: "hi" } }],
+        }),
+      };
+    }
+    if (String(url).includes("auth.test")) {
+      return { status: 200, json: async () => ({ ok: true, team: "Hive Co", user: "hivebot" }) };
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+  try {
+    result = await call(registry, "POST", "/api/sentinel/telegram/validate", { body: { token: "123:abc" } });
+    assert.equal(result.status, 200);
+    assert.deepEqual(result.body, { ok: true, bot_username: "hive_bot", bot_name: "Hive" });
 
-  result = await call(registry, "POST", "/api/sentinel/telegram/detect-chat", { body: {} });
-  assert.equal(result.status, 400);
-  assert.match(result.body.error, /save the bot token first/);
+    result = await call(registry, "POST", "/api/sentinel/telegram/validate", { body: { token: "bad" } });
+    assert.equal(result.status, 200);
+    assert.equal(result.body.ok, false);
+    assert.equal(result.body.error, "Unauthorized", "an upstream refusal is reported, not hidden");
 
-  result = await call(registry, "POST", "/api/sentinel/telegram/detect-chat", {
-    body: { token: "123:abc" },
-  });
-  assert.equal(result.status, 400);
-  assert.equal(result.body.code, "integration_unavailable");
+    result = await call(registry, "POST", "/api/sentinel/telegram/detect-chat", { body: { token: "123:abc" } });
+    assert.equal(result.status, 200);
+    assert.deepEqual(result.body, {
+      ok: true,
+      pending: false,
+      chat_id: "4242",
+      chat_title: "Ops",
+      sender_id: "7",
+      sender_name: "Ada L",
+    });
 
-  result = await call(registry, "POST", "/api/sentinel/slack/validate", { body: {} });
-  assert.equal(result.status, 400);
-  assert.match(result.body.error, /no token provided or saved/);
+    result = await call(registry, "POST", "/api/sentinel/slack/validate", { body: { token: "xoxb-1" } });
+    assert.equal(result.status, 200);
+    assert.deepEqual(result.body, { ok: true, team: "Hive Co", bot_user: "hivebot" });
 
-  result = await call(registry, "POST", "/api/sentinel/slack/validate", { body: { token: "xoxb" } });
-  assert.equal(result.status, 400);
-  assert.equal(result.body.code, "integration_unavailable");
-  assert.match(result.body.error, /no Slack transport/);
+    // No response ever carries the token back.
+    assert.equal(JSON.stringify(seen).includes("xoxb-1"), true, "the token is used in the request");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 
-  // Real integrations plug in through ctx; their result passes through.
-  result = await call(registry, "POST", "/api/sentinel/telegram/validate", {
-    body: { token: "123:abc" },
-    ctx: { validateTelegram: async (token) => ({ ok: true, bot_username: `bot_${token.length}` }) },
-  });
-  assert.equal(result.status, 200);
-  assert.deepEqual(result.body, { ok: true, bot_username: "bot_7" });
-
-  result = await call(registry, "POST", "/api/sentinel/slack/validate", {
-    body: { token: "xoxb" },
-    ctx: { validateSlack: async () => ({ ok: true, team: "hive", bot_user: "hivebot" }) },
-  });
-  assert.equal(result.status, 200);
-  assert.equal(result.body.team, "hive");
-
-  result = await call(registry, "POST", "/api/sentinel/telegram/detect-chat", {
-    body: { token: "123:abc" },
-    ctx: { detectTelegramChat: async () => ({ ok: true, chat_id: "42", chat_title: "ops" }) },
-  });
-  assert.equal(result.status, 200);
-  assert.equal(result.body.chat_id, "42");
+  // A transport that cannot be reached is reported as an error, not as a fake success.
+  globalThis.fetch = async () => {
+    throw new Error("connect ECONNREFUSED");
+  };
+  try {
+    result = await call(registry, "POST", "/api/sentinel/slack/validate", { body: { token: "xoxb-1" } });
+    assert.equal(result.status, 200);
+    assert.equal(result.body.ok, false);
+    assert.match(result.body.error, /ECONNREFUSED/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
-// ---------------------------------------------------------------------------
-// System: runtime logs + browser status
-// ---------------------------------------------------------------------------
 
 test("runtime logs honor the boot/after cursor from a ctx provider", async () => {
   useHome();

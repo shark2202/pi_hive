@@ -217,7 +217,7 @@ _pi_hive:_ 19 implemented. Reads return real config (env plus what was saved) or
 
 ## Sentinel / notifications (7)
 
-_pi_hive:_ 4 implemented, 3 partial. Per-colony notification config, the local inbox test and credential presence are real; Telegram/Slack validate helpers answer explicit 400 because no transport or listener exists.
+_pi_hive:_ 7 implemented. Per-colony notification config, the local inbox test and credential presence are real, and the three transport checks really call the provider: `telegram/validate` → Bot API `getMe` (returns `bot_username`/`bot_name`), `telegram/detect-chat` → `getUpdates` (returns a pending chat id/title/sender or `pending:true`), `slack/validate` → `auth.test` (returns `team`/`bot_user`). Tokens come from the request or the saved sentinel config, travel only in the URL/header, and are never echoed. A refused token or an unreachable provider answers `200 {ok:false, error}` carrying the provider's own message — never a fake success.
 
 | Method | Path | Client (source) | Request | Response | SSE events | pi_hive |
 |---|---|---|---|---|---|---|
@@ -225,9 +225,9 @@ _pi_hive:_ 4 implemented, 3 partial. Per-colony notification config, the local i
 | PUT | `/colony/:colony/notifications` | sentinel (`sentinel.ts:71`) | SentinelConfigUpdate | SentinelConfig | — | implemented |
 | POST | `/colony/:colony/notifications/test` | sentinel (`sentinel.ts:81`) | inline {channel?, target?} | TestSendResult | — | implemented |
 | GET | `/sentinel/credentials` | sentinel (`sentinel.ts:88`) | — | SentinelCredentialStatus | — | implemented |
-| POST | `/sentinel/telegram/validate` | sentinel (`sentinel.ts:92`) | inline {token} | TelegramValidateResult | — | partial |
-| POST | `/sentinel/telegram/detect-chat` | sentinel (`sentinel.ts:96`) | {} | TelegramDetectResult | — | partial |
-| POST | `/sentinel/slack/validate` | sentinel (`sentinel.ts:100`) | inline {token} | SlackValidateResult | — | partial |
+| POST | `/sentinel/telegram/validate` | sentinel (`sentinel.ts:92`) | inline {token} | TelegramValidateResult | — | implemented |
+| POST | `/sentinel/telegram/detect-chat` | sentinel (`sentinel.ts:96`) | {} | TelegramDetectResult | — | implemented |
+| POST | `/sentinel/slack/validate` | sentinel (`sentinel.ts:100`) | inline {token} | SlackValidateResult | — | implemented |
 
 ## Skills (14)
 

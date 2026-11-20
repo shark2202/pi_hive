@@ -60,7 +60,7 @@
 | Event bus | 🟡 | In-process EventEmitter + SSE; no durable event log |
 | Reminder Hub | 🟡 | Tracker snapshot, active workers, colony-parallel nudge, idle; no compaction/stream-stall sources |
 | Idle nudge | ✅ | `PI_HIVE_IDLE_SECONDS` |
-| Sentinel | 🟡 | Parked classifier, continue/needs_human/done, local inbox + optional webhook; no Telegram/Slack, no UI |
+| Sentinel | ✅ | Parked classifier, continue/needs_human/done, local inbox, real Telegram `getMe`/`getUpdates` and Slack `auth.test` checks + optional webhook; no Telegram/Slack, no UI |
 | Human-in-the-loop | 🟡 | Queen can ask in chat; Sentinel reply route resumes |
 | Queen Mail | 🟡 | In-process `QueenMail`; registered Queens, depth/daily limit; no Claude Code peer |
 
@@ -93,7 +93,7 @@
 | Webhook trigger | 🟡 | `POST .../triggers/:name/webhook`; no signature verification |
 | Trigger autostart | 🟡 | Starts when colony runtime is created; no global daemon |
 | Missed-trigger reporting | ⬜ | No catch-up; last fire is not reconciled across downtime |
-| Sentinel | 🟡 | Same classifier/inbox as above; no Telegram/Slack |
+| Sentinel transports | ✅ | Telegram `getMe`/`getUpdates` and Slack `auth.test` are real calls; delivery still goes to the local inbox because no sender is wired |
 | Queen 24/7 | 🟡 | Server must stay alive; no supervisor/daemon |
 
 ## Tools and integrations
@@ -121,7 +121,7 @@
 
 | Feature | Status | Notes |
 |---|---|---|
-| HTTP API | 🟡 | 171 official routes: 161 implemented + 10 partial + 0 missing; every partial is an explicit 4xx, never a fake success |
+| HTTP API | 🟡 | 171 official routes: 164 implemented + 7 partial + 0 missing; every partial is an explicit 4xx, never a fake success |
 | SSE | ✅ | Per-session events replay + tail from the durable `events.jsonl`; chat deltas + colony events |
 | CLI | 🟡 | serve/colony/chat/worker/playbook/tracker; no skill/mcp/janitor |
 | Official Hive frontend (forked at `frontend/`, built here) | ✅ | Fork source + dist live in this repo; served at `/`; desktop chat verified end-to-end (Queen reply over SSE, last verified 2026-11-19 — not re-run: no model key in this environment); mobile official layout is desktop-first and squeezed |
@@ -154,7 +154,7 @@ A feature is ✅ only when:
 
 ## Next milestones
 
-1. **API behavior**: close the 10 remaining partial rows (6 credential routes, 3 Telegram/Slack transports, 1 Claude Code transcript); route surface is complete.
+1. **API behavior**: close the 7 remaining partial rows (6 credential routes, 1 Claude Code transcript); route surface is complete.
 2. **Memory reflection**: cooldown reflection and consolidation (Soul proposals exist).
 3. **MCP and browser/web tools**: load MCP servers; add browser/web tools.
 4. **Sentinel channels**: Telegram/Slack + escalation policy.

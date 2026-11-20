@@ -43,7 +43,7 @@
     "derivation": "api.get/post/put/patch/delete/upload + apiUrl + subscribeSse call sites, plus the exported types in src/api/types.ts"
   },
   "generated_at": "2026-11-19T10:10:50.368Z",
-  "revised_at": "2026-11-20T09:09:41+08:00",
+  "revised_at": "2026-11-20T09:14:07+08:00",
   "revision": "1.3.0",
   "domains": [
     "colonies",
@@ -93,8 +93,8 @@
       "workers": 7
     },
     "by_status": {
-      "implemented": 161,
-      "partial": 10,
+      "implemented": 164,
+      "partial": 7,
       "shell-only": 0,
       "missing": 0
     },
@@ -2091,8 +2091,8 @@
       "response_type": "TelegramValidateResult",
       "sse": false,
       "sse_events": [],
-      "pi_hive_status": "partial",
-      "notes": "Partial compatibility: Telegram transport is not implemented; explicit 400 unless ctx provides a validator.",
+      "pi_hive_status": "implemented",
+      "notes": "validates a bot token against Telegram getMe; a refused token answers ok:false",
       "source": "sentinel.ts:92",
       "query": []
     },
@@ -2106,8 +2106,8 @@
       "response_type": "TelegramDetectResult",
       "sse": false,
       "sse_events": [],
-      "pi_hive_status": "partial",
-      "notes": "Partial compatibility: Telegram listener is not implemented; explicit 400 unless ctx provides a detector.",
+      "pi_hive_status": "implemented",
+      "notes": "Telegram listener is not implemented; explicit 400 unless ctx provides a detector",
       "source": "sentinel.ts:96",
       "query": []
     },
@@ -2121,8 +2121,8 @@
       "response_type": "SlackValidateResult",
       "sse": false,
       "sse_events": [],
-      "pi_hive_status": "partial",
-      "notes": "Partial compatibility: Slack transport is not implemented; explicit 400 unless ctx provides a validator.",
+      "pi_hive_status": "implemented",
+      "notes": "validates a bot token against Slack auth.test",
       "source": "sentinel.ts:100",
       "query": []
     },
