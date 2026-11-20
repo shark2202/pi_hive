@@ -714,7 +714,7 @@ test("trigger routes create, list, patch, activate, deactivate, and run", async 
   assert.equal(list.body.triggers[0].task, "Review the tracker and report anomalies");
   assert.equal(list.body.triggers[0].enabled, true);
 
-  const updated = await callJson(registry, "PATCH", `${base}/${createdTrigger.body.trigger_id}`, {
+  const updated = await callJson(registry, "PATCH", `/api/sessions/${created.session_id}/triggers/${createdTrigger.body.trigger_id}`, {
     body: { task: "Check twice", trigger_config: { cron: "0 9 * * *" } },
   });
   assert.equal(updated.status, 200);
@@ -724,7 +724,7 @@ test("trigger routes create, list, patch, activate, deactivate, and run", async 
   const deactivated = await callJson(
     registry,
     "POST",
-    `${base}/${createdTrigger.body.trigger_id}/deactivate`,
+    `/api/sessions/${created.session_id}/triggers/${createdTrigger.body.trigger_id}/deactivate`,
   );
   assert.deepEqual(deactivated.body, {
     status: "deactivated",
@@ -734,14 +734,14 @@ test("trigger routes create, list, patch, activate, deactivate, and run", async 
   const activated = await callJson(
     registry,
     "POST",
-    `${base}/${createdTrigger.body.trigger_id}/activate`,
+    `/api/sessions/${created.session_id}/triggers/${createdTrigger.body.trigger_id}/activate`,
   );
   assert.deepEqual(activated.body, {
     status: "activated",
     trigger_id: createdTrigger.body.trigger_id,
   });
 
-  const run = await callJson(registry, "POST", `${base}/${createdTrigger.body.trigger_id}/run`);
+  const run = await callJson(registry, "POST", `/api/sessions/${created.session_id}/triggers/${createdTrigger.body.trigger_id}/run`);
   assert.deepEqual(run.body, { status: "triggered", trigger_id: createdTrigger.body.trigger_id });
   assert.equal(queen.fired.length, 1);
   assert.equal(queen.fired[0].name, createdTrigger.body.trigger_id);

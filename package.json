@@ -16,7 +16,8 @@
     "ui:install": "npm --prefix frontend install --no-audit --no-fund",
     "ui:build": "npm --prefix frontend run build",
     "ui:test": "npm --prefix frontend test",
-    "ui:dev": "npm --prefix frontend run dev"
+    "ui:dev": "npm --prefix frontend run dev",
+    "qa:coverage": "node program/qa/route-coverage.mjs"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "1.5.2",

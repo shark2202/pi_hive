@@ -32,6 +32,10 @@ name what is narrower (a local file instead of the cloud DB, a probe instead of 
 MCP client, and so on). Native pi_hive routes (`/api/colonies`, colony-scoped
 chat/tracker/workers/SSE) keep their own shapes and are not counted here.
 
+Coverage evidence: `node program/qa/route-coverage.mjs` maps every route to the tests that
+name it (171/171), `npm run qa:coverage` is the same gate, and
+`program/reports/route-coverage.md` holds the generated per-route table.
+
 Conventions:
 
 - `inline {..}` means the request body is an object literal at the call site;

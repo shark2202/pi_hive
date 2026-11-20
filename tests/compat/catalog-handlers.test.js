@@ -154,6 +154,56 @@ function memoryUrl(rel) {
   return `/api/memories/file?path=${encodeURIComponent(rel)}`;
 }
 
+test("GET /api/memories lists every scope with paths, sizes and metadata", async () => {
+  const home = useHome();
+  seedColony("acme");
+
+  // One file per scope, with front matter so the metadata mapping is exercised.
+  const globalDir = path.join(home, "memory", "global");
+  const queenDir = path.join(home, "memory", "queens", "queen_growth");
+  const colonyMem = path.join(colonyPaths("acme").dir, "memory");
+  for (const dir of [globalDir, queenDir, colonyMem]) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(globalDir, "voice.md"), "---\nname: Voice\ntype: preference\n---\nBe direct.\n");
+  fs.writeFileSync(path.join(queenDir, "notes.md"), "---\nname: Notes\n---\nQueen note.\n");
+  fs.writeFileSync(path.join(colonyMem, "state.md"), "Colony state without front matter.\n");
+
+  const registry = new RouteRegistry();
+  registerCatalogRoutes(registry, {});
+  const listed = await call(registry, "GET", "/api/memories");
+  assert.equal(listed.status, 200);
+
+  const byPath = new Map(listed.body.memories.map((entry) => [entry.path, entry]));
+  assert.deepEqual([...byPath.keys()].sort(), [
+    "agents/queens/queen_growth/notes.md",
+    "colonies/acme/state.md",
+    "global/voice.md",
+  ]);
+
+  const voice = byPath.get("global/voice.md");
+  assert.equal(voice.scope, "global");
+  assert.equal(voice.scope_name, "");
+  assert.equal(voice.name, "Voice");
+  assert.equal(voice.type, "preference");
+  assert.equal(typeof voice.mtime, "number", "the list carries a modification stamp, not a body");
+  assert.equal(voice.filename, "voice.md");
+
+  const queen = byPath.get("agents/queens/queen_growth/notes.md");
+  assert.equal(queen.scope, "queen");
+  assert.equal(queen.scope_name, "queen_growth");
+  assert.equal(queen.name, "Notes");
+
+  const colony = byPath.get("colonies/acme/state.md");
+  assert.equal(colony.scope, "colony");
+  assert.equal(colony.scope_name, "acme");
+  assert.equal(colony.name, null, "no front matter means no name");
+
+  // The list carries no body: content only comes from the file route.
+  assert.equal(voice.content, undefined);
+  const read = await call(registry, "GET", "/api/memories/file?path=global/voice.md");
+  assert.equal(read.status, 200);
+  assert.match(read.body.content, /Be direct/);
+});
+
 // ---------------------------------------------------------------------------
 // Registration
 // ---------------------------------------------------------------------------

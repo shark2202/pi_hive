@@ -124,6 +124,7 @@
 | HTTP API | ✅ | 171 official routes: 171 implemented + 0 partial + 0 missing (`program/contracts/hive-api.json`); narrower semantics are documented per domain in `docs/API_COMPAT.md` and `program/reports/` |
 | SSE | ✅ | Per-session events replay + tail from the durable `events.jsonl`; chat deltas + colony events |
 | CLI | 🟡 | serve/colony/chat/worker/playbook/tracker; no skill/mcp/janitor |
+| Per-route test coverage | ✅ | `node program/qa/route-coverage.mjs`: 171/171 official routes are named by a test (`npm run qa:coverage`); `tests/compat/route-coverage.test.js` fails the suite if a contract route loses its test |
 | Official Hive frontend (forked at `frontend/`, built here) | ✅ | Fork source + dist live in this repo; served at `/`; desktop chat verified end-to-end (Queen reply over SSE, last verified 2026-11-19 — not re-run: no model key in this environment); mobile official layout is desktop-first and squeezed |
 | Web dashboard | 🟡 | Native `/ui/`: colonies, chat (SSE), workers, tracker, playbooks, triggers, inbox, Soul; not Hive UI parity |
 | API auth | ⬜ | Local-only; no auth |
