@@ -198,3 +198,56 @@ export function deleteAvatar() {
     }
   }
 }
+
+// --- model slots and named endpoints ---------------------------------------
+
+/** Role slots pi_hive can store a model for; `queen:<id>` is handled elsewhere. */
+export const MODEL_SLOT_KEYS = Object.freeze(["worker_llm", "vision_fallback"]);
+
+/** Stored slot summaries keyed by slot name. */
+export function readSlots() {
+  const stored = readJson("slots.json", {});
+  return stored && typeof stored === "object" && !Array.isArray(stored) ? stored : {};
+}
+
+/** `null` clears the slot (the runtime falls back to the main model). */
+export function writeSlot(slot, summary) {
+  const slots = readSlots();
+  if (summary === null) delete slots[slot];
+  else slots[slot] = summary;
+  writeJson("slots.json", slots);
+  return summary;
+}
+
+/**
+ * Named OpenAI-compatible endpoints. A saved key is a real secret, so the file
+ * is written 0600 and the key is never echoed: callers only see `has_key`.
+ */
+export function readEndpoints() {
+  const stored = readJson("endpoints.json", {});
+  return stored && typeof stored === "object" && !Array.isArray(stored) ? stored : {};
+}
+
+/** `null` deletes the endpoint; `undefined` for `api_key` means "leave it". */
+export function writeEndpoint(name, entry) {
+  const endpoints = readEndpoints();
+  if (entry === null) {
+    delete endpoints[name];
+    writeJson("endpoints.json", endpoints);
+    chmod600("endpoints.json");
+    return null;
+  }
+  endpoints[name] = { ...(endpoints[name] || {}), ...entry };
+  writeJson("endpoints.json", endpoints);
+  chmod600("endpoints.json");
+  return endpoints[name];
+}
+
+function chmod600(name) {
+  if (process.platform === "win32") return;
+  try {
+    fs.chmodSync(fileFor(name), 0o600);
+  } catch {
+    // best effort: an unwritable mode must not fail the write
+  }
+}

@@ -45,21 +45,26 @@ import {
   FEATURE_KEYS,
   MAX_AVATAR_BYTES,
   readAvatar,
+  readEndpoints,
   readLibrary,
   readLlmOverride,
   readRateLimits,
   readSections,
   readSkillPaths,
+  readSlots,
   saveAvatar,
   sectionError,
   setLibraryEntry,
+  writeEndpoint,
   writeFeatures,
   writeLlmOverride,
   writeProfile,
   writeRateLimits,
   writeSection,
   writeSkillPaths,
+  writeSlot,
 } from "../../domain/config-store.js";
+import { readLlm as readQueenLlm, writeLlm as writeQueenLlm } from "../../domain/queen-state.js";
 import { parseMultipart } from "./sessions.js";
 import { buildCredentialSpecs, buildFeatures, buildLLMConfig, buildModelsCatalogue } from "./config.js";
 
@@ -179,7 +184,10 @@ export function buildRateLimits() {
  */
 export function buildEndpointModels(endpointName) {
   const provider = buildLLMConfig().provider;
-  if (endpointName !== provider) return null;
+  if (endpointName !== provider) {
+    // A stored endpoint is asked directly; the caller turns a null into 404.
+    return readEndpoints()[endpointName] ? ENDPOINT_MODELS_UNPROBED : null;
+  }
   const catalogue = buildModelsCatalogue();
   const models = (catalogue.models?.[provider] || []).map((model) => ({
     id: model.id,
@@ -188,6 +196,9 @@ export function buildEndpointModels(endpointName) {
   }));
   return { models };
 }
+
+/** Marker: the route handler still has to ask the endpoint over HTTP. */
+const ENDPOINT_MODELS_UNPROBED = Object.freeze({ unprobed: true });
 
 /** Official `OAuthStatusResponse`: no OAuth providers, real Aden-key bit. */
 export function buildOauthStatus() {
@@ -360,7 +371,49 @@ async function getEndpointModels(args = {}) {
   const name = typeof args.params?.endpoint === "string" ? args.params.endpoint : "";
   const body = buildEndpointModels(name);
   if (!body) return notFound(`There's no endpoint '${name}'`);
+  if (body.unprobed) return probeEndpointModels(name);
   return ok(body);
+}
+
+/**
+ * `GET {api_base}/models` for a stored endpoint. OpenAI-compatible servers all
+ * answer this, so it is the honest way to list what an endpoint serves; a
+ * failure is reported with the endpoint's own error instead of an empty list.
+ */
+async function probeEndpointModels(name) {
+  const entry = readEndpoints()[name];
+  const url = `${entry.api_base.replace(/\/+$/, "")}/models`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ENDPOINT_PROBE_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, {
+      headers: entry.api_key ? { authorization: `Bearer ${entry.api_key}` } : {},
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      return { status: 502, body: { error: `${name} answered ${response.status} for ${url}`, endpoint: name } };
+    }
+    const payload = await response.json().catch(() => null);
+    const list = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload?.models) ? payload.models : [];
+    return {
+      status: 200,
+      body: {
+        models: list
+          .filter((model) => model && typeof model.id === "string")
+          .map((model) => ({
+            id: model.id,
+            label: typeof model.name === "string" ? model.name : null,
+            max_context_tokens:
+              Number(model.context_length ?? model.max_context_tokens ?? model.max_model_len) || null,
+          })),
+      },
+    };
+  } catch (err) {
+    const reason = err?.name === "AbortError" ? `no answer within ${ENDPOINT_PROBE_TIMEOUT_MS} ms` : err?.message || String(err);
+    return { status: 502, body: { error: `could not reach ${name}: ${reason}`, endpoint: name } };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** The credential vault is empty, so every id is missing (never a secret echo). */
@@ -639,6 +692,8 @@ const putRateLimits = async ({ req }) => {
   return { status: 200, body: { limits: writeRateLimits(entries), warnings } };
 };
 
+const ENDPOINT_PROBE_TIMEOUT_MS = 5000;
+
 const AVATAR_TYPES = /^(image\/(png|jpeg|jpg|webp)|application\/octet-stream)$/;
 
 /** POST /config/profile/avatar — store the uploaded profile picture. */
@@ -662,70 +717,197 @@ const postProfileAvatar = async ({ req }) => {
   return { status: 200, body: { avatar_url: "/api/config/profile/avatar" } };
 };
 
-const SLOT_REASONS = Object.freeze({
-  llm: {
-    put: "pi_hive runs one model configured by environment variables; the main model cannot be assigned or hot-swapped at runtime",
-    delete: "the main model cannot be removed: pi_hive always needs the single model configured by PI_HIVE_MODEL",
-  },
-  worker_llm:
-    "pi_hive has no worker_llm slot: it runs the single configured model for queens and workers alike",
-  vision_fallback:
-    "pi_hive has no vision_fallback slot: the configured model declares text input only",
-  queen:
-    "pi_hive has no per-queen model configuration: every colony uses the single configured model",
-});
+/** A slot summary shaped like the official `SlotSummary` (never a key). */
+function slotSummaryOf(source, { provider, model, endpoint }) {
+  const cfg = modelConfig();
+  const saved = endpoint ? readEndpoints()[endpoint] || null : null;
+  return {
+    source,
+    provider: provider ?? null,
+    model,
+    endpoint: endpoint ?? null,
+    subscription: null,
+    api_base:
+      source === "endpoint"
+        ? saved?.api_base ?? null
+        : source === "catalog" && provider === cfg.provider
+          ? cfg.baseUrl
+          : null,
+    max_context_tokens: null,
+    has_extra_body: false,
+  };
+}
 
-function slotMutation(args = {}, method) {
+/** Validate an official `ModelChoice`: a catalogue model or an endpoint's model. */
+function readChoice(parsed) {
+  const source = parsed?.source;
+  if (source !== "catalog" && source !== "endpoint") {
+    return { error: "source must be 'catalog' or 'endpoint'" };
+  }
+  if (typeof parsed?.model !== "string" || !parsed.model.trim()) {
+    return { error: "model is required" };
+  }
+  if (source === "catalog") {
+    if (typeof parsed.provider !== "string" || !parsed.provider.trim()) {
+      return { error: "provider is required for a catalogue choice" };
+    }
+    return { choice: { source, provider: parsed.provider.trim(), model: parsed.model.trim() } };
+  }
+  if (typeof parsed.endpoint !== "string" || !parsed.endpoint.trim()) {
+    return { error: "endpoint is required for an endpoint choice" };
+  }
+  const name = parsed.endpoint.trim();
+  if (!readEndpoints()[name]) return { error: `There's no endpoint '${name}'`, status: 404 };
+  return { choice: { source, endpoint: name, model: parsed.model.trim() } };
+}
+
+/** Split the official slot id into a role slot or a queen id. */
+function parseSlotId(slot) {
+  if (slot === "llm" || slot === "worker_llm" || slot === "vision_fallback") return { role: slot };
+  if (slot.startsWith("queen:") && slot.length > 6) return { queen: slot.slice(6) };
+  return null;
+}
+
+/** The llm section a choice resolves to. */
+function choiceSection(choice) {
+  const section = { model: choice.model };
+  if (choice.provider) section.provider = choice.provider;
+  if (choice.endpoint) {
+    const saved = readEndpoints()[choice.endpoint];
+    if (saved?.api_base) section.api_base = saved.api_base;
+  }
+  return section;
+}
+
+/**
+ * `PUT /api/models/slots/:slot`. The main model writes the saved LLM override
+ * (what `modelConfig()` reads), a `queen:<id>` slot writes that queen's own llm
+ * section, and worker/vision slots persist a summary (`hiveHome()/config/slots.json`)
+ * that the worker runtime reads. Only the main model can swap live sessions,
+ * because only it backs an already-built runtime.
+ */
+async function putSlot(args = {}) {
   const route = routeOf(args, `/api/models/slots/${args.params?.slot ?? ""}`);
   const slot = typeof args.params?.slot === "string" ? args.params.slot : "";
-
-  if (slot === "llm") {
-    return unsupported(
-      route,
-      "models.slots",
-      method === "DELETE" ? SLOT_REASONS.llm.delete : SLOT_REASONS.llm.put,
-    );
+  const target = parseSlotId(slot);
+  if (!target) {
+    return invalidRequest(route, `There's no slot '${slot}': slot must be llm, worker_llm, vision_fallback or queen:<id>`);
   }
-  if (slot === "worker_llm" || slot === "vision_fallback") {
-    return unsupported(route, "models.slots", SLOT_REASONS[slot]);
+  const parsed = await readJson(args.req ?? {});
+  const choice = readChoice(parsed.ok ? parsed.value : null);
+  if (choice.error) {
+    return choice.status === 404 ? notFound(choice.error) : invalidRequest(route, choice.error);
   }
-  if (slot.startsWith("queen:")) {
-    return unsupported(route, "models.slots", SLOT_REASONS.queen);
+
+  if (target.role === "llm") {
+    const section = choiceSection(choice.choice);
+    const error = sectionError(section);
+    if (error) return invalidRequest(route, error);
+    writeLlmOverride(section);
+    return {
+      status: 200,
+      body: { slot, summary: slotSummaryOf(choice.choice.source, choice.choice), sessions_switched: swapLiveSessions(args.ctx) },
+    };
   }
-  return invalidRequest(
-    route,
-    `There's no slot '${slot}': pi_hive supports the single env-configured main model only`,
-  );
+
+  if (target.queen) {
+    writeQueenLlm(target.queen, choiceSection(choice.choice));
+    return { status: 200, body: { slot, summary: slotSummaryOf(choice.choice.source, choice.choice), sessions_switched: 0 } };
+  }
+
+  writeSlot(slot, slotSummaryOf(choice.choice.source, choice.choice));
+  return { status: 200, body: { slot, summary: slotSummaryOf(choice.choice.source, choice.choice), sessions_switched: 0 } };
 }
 
-function putSlot(args = {}) {
-  return slotMutation(args, "PUT");
+/** `DELETE /api/models/slots/:slot` — back to the default (main model, or none). */
+async function deleteSlot(args = {}) {
+  const route = routeOf(args, `/api/models/slots/${args.params?.slot ?? ""}`);
+  const slot = typeof args.params?.slot === "string" ? args.params.slot : "";
+  const target = parseSlotId(slot);
+  if (!target) {
+    return invalidRequest(route, `There's no slot '${slot}': slot must be llm, worker_llm, vision_fallback or queen:<id>`);
+  }
+  if (target.role === "llm") {
+    writeLlmOverride(null);
+    return { status: 200, body: { slot, summary: null, sessions_switched: swapLiveSessions(args.ctx) } };
+  }
+  if (target.queen) {
+    writeQueenLlm(target.queen, null);
+    return { status: 200, body: { slot, summary: null } };
+  }
+  writeSlot(slot, null);
+  return { status: 200, body: { slot, summary: null } };
 }
 
-function deleteSlot(args = {}) {
-  return slotMutation(args, "DELETE");
+/** Official `ModelEndpoint` for one stored name — never the key. */
+function endpointBody(name, entry) {
+  return {
+    name,
+    api_base: entry?.api_base ?? "",
+    builtin: false,
+    has_key: Boolean(entry?.api_key),
+    running: false,
+  };
 }
 
-function putEndpoint(args = {}) {
-  const name = typeof args.params?.endpoint === "string" ? args.params.endpoint : "";
-  return unsupported(
-    routeOf(args, `/api/models/endpoints/${name}`),
-    "models.endpoints",
-    "pi_hive has no model endpoint registry: the OpenAI-compatible endpoint is fixed by PI_HIVE_BASE_URL and cannot be added or changed at runtime",
-  );
+/** `PUT /api/models/endpoints/:endpoint` — add or edit one named endpoint. */
+async function putEndpoint(args = {}) {
+  const route = routeOf(args, `/api/models/endpoints/${args.params?.endpoint ?? ""}`);
+  const name = typeof args.params?.endpoint === "string" ? args.params.endpoint.trim() : "";
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(name)) {
+    return invalidRequest(route, "endpoint name must be 1-64 characters of letters, digits, dot, dash or underscore");
+  }
+  const parsed = await readJson(args.req ?? {});
+  const body = parsed.ok ? parsed.value : null;
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return invalidRequest(route, "expected {api_base?, api_key?}");
+  }
+  const existing = readEndpoints()[name] || null;
+  const patch = {};
+
+  if (body.api_base !== undefined) {
+    if (typeof body.api_base !== "string") return invalidRequest(route, "api_base must be a string");
+    let url;
+    try {
+      url = new URL(body.api_base.trim());
+    } catch {
+      return invalidRequest(route, `api_base must be an absolute URL, got '${body.api_base}'`);
+    }
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return invalidRequest(route, "api_base must be http or https");
+    }
+    patch.api_base = body.api_base.trim().replace(/\/+$/, "");
+  }
+  if (body.api_key !== undefined) {
+    if (body.api_key !== null && typeof body.api_key !== "string") {
+      return invalidRequest(route, "api_key must be a string or null");
+    }
+    patch.api_key = body.api_key === null ? null : body.api_key.trim();
+  }
+  if (!existing && !patch.api_base) {
+    return invalidRequest(route, "api_base is required when adding an endpoint");
+  }
+  if (Object.keys(patch).length === 0) {
+    return invalidRequest(route, "nothing to change: send api_base and/or api_key");
+  }
+
+  const stamp = new Date().toISOString();
+  const saved = writeEndpoint(name, {
+    ...patch,
+    created_at: existing?.created_at ?? stamp,
+    updated_at: stamp,
+  });
+  return { status: 200, body: endpointBody(name, saved) };
 }
 
+/** `DELETE /api/models/endpoints/:endpoint`. */
 function deleteEndpoint(args = {}) {
-  const name = typeof args.params?.endpoint === "string" ? args.params.endpoint : "";
-  const route = routeOf(args, `/api/models/endpoints/${name}`);
-  if (name === buildLLMConfig().provider) {
-    return unsupported(
-      route,
-      "models.endpoints",
-      "the configured endpoint comes from PI_HIVE_BASE_URL and cannot be removed at runtime",
-    );
+  const name = typeof args.params?.endpoint === "string" ? args.params.endpoint.trim() : "";
+  if (!readEndpoints()[name]) {
+    return notFound(`There's no endpoint '${name}'`);
   }
-  return notFound(`There's no endpoint '${name}'`);
+  writeEndpoint(name, null);
+  return { status: 200, body: { deleted: name } };
 }
 
 function postCredential(args = {}) {
@@ -804,11 +986,11 @@ const ROUTE_TABLE = [
   ["PUT", "/api/config/rate-limits", putRateLimits, "replaces the pacing table from a platform:action map, warning on unusable keys"],
   ["POST", "/api/config/profile/avatar", postProfileAvatar, "stores the uploaded picture under the config dir; image types only, 5 MiB cap"],
   ["GET", "/api/config/profile/avatar", getProfileAvatar, "serves the stored avatar bytes; 404 until one is uploaded"],
-  ["PUT", "/api/models/slots/:slot", putSlot, "400: pi_hive runs one env-configured model and has no other slots"],
-  ["DELETE", "/api/models/slots/:slot", deleteSlot, "400: the single model cannot be cleared and other slots do not exist"],
-  ["GET", "/api/models/endpoints/:endpoint/models", getEndpointModels, "the configured endpoint's single real model; 404 for unknown names"],
-  ["PUT", "/api/models/endpoints/:endpoint", putEndpoint, "400: pi_hive has no writable endpoint registry"],
-  ["DELETE", "/api/models/endpoints/:endpoint", deleteEndpoint, "400 for the env-configured endpoint; 404 for unknown names"],
+  ["PUT", "/api/models/slots/:slot", putSlot, "assigns llm/worker_llm/vision_fallback/queen:<id>; only llm swaps live sessions"],
+  ["DELETE", "/api/models/slots/:slot", deleteSlot, "clears a slot back to the main model"],
+  ["GET", "/api/models/endpoints/:endpoint/models", getEndpointModels, "asks a stored endpoint's /models; 404 unknown, 502 unreachable"],
+  ["PUT", "/api/models/endpoints/:endpoint", putEndpoint, "adds or edits a named endpoint; the key is stored 0600 and never echoed"],
+  ["DELETE", "/api/models/endpoints/:endpoint", deleteEndpoint, "removes a stored endpoint; 404 for unknown names"],
   ["GET", "/api/credentials/:credential", getCredential, "official 404: pi_hive has no credential vault"],
   ["POST", "/api/credentials", postCredential, "400: pi_hive has no credential vault (keys are env-only)"],
   ["DELETE", "/api/credentials/:credential", deleteCredential, "400: pi_hive has no credential vault"],

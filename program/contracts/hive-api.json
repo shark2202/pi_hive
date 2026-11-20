@@ -43,7 +43,7 @@
     "derivation": "api.get/post/put/patch/delete/upload + apiUrl + subscribeSse call sites, plus the exported types in src/api/types.ts"
   },
   "generated_at": "2026-11-19T10:10:50.368Z",
-  "revised_at": "2026-11-20T08:57:53+08:00",
+  "revised_at": "2026-11-20T09:02:30+08:00",
   "revision": "1.3.0",
   "domains": [
     "colonies",
@@ -93,8 +93,8 @@
       "workers": 7
     },
     "by_status": {
-      "implemented": 150,
-      "partial": 21,
+      "implemented": 154,
+      "partial": 17,
       "shell-only": 0,
       "missing": 0
     },
@@ -1494,8 +1494,8 @@
       "response_type": "{slot, summary, sessions_switched}",
       "sse": false,
       "sse_events": [],
-      "pi_hive_status": "partial",
-      "notes": "Partial compatibility: 400: pi_hive runs one env-configured model and has no other slots. explicit 400 unsupported_capability: pi_hive has no backing store for this write.",
+      "pi_hive_status": "implemented",
+      "notes": "assigns llm/worker_llm/vision_fallback/queen:<id>; only llm swaps live sessions",
       "source": "models.ts:81",
       "query": []
     },
@@ -1509,8 +1509,8 @@
       "response_type": "{slot, summary: null}",
       "sse": false,
       "sse_events": [],
-      "pi_hive_status": "partial",
-      "notes": "Partial compatibility: 400: the single model cannot be cleared and other slots do not exist. explicit 400 unsupported_capability: pi_hive has no backing store for this write.",
+      "pi_hive_status": "implemented",
+      "notes": "clears a slot back to the main model",
       "source": "models.ts:84",
       "query": []
     },
@@ -1545,8 +1545,8 @@
       "response_type": "ModelEndpoint",
       "sse": false,
       "sse_events": [],
-      "pi_hive_status": "partial",
-      "notes": "Partial compatibility: 400: pi_hive has no writable endpoint registry. explicit 400 unsupported_capability: pi_hive has no backing store for this write.",
+      "pi_hive_status": "implemented",
+      "notes": "adds or edits a named endpoint; the key is stored 0600 and never echoed",
       "source": "models.ts:91",
       "query": []
     },
@@ -1560,8 +1560,8 @@
       "response_type": "{deleted}",
       "sse": false,
       "sse_events": [],
-      "pi_hive_status": "partial",
-      "notes": "Partial compatibility: 400 for the env-configured endpoint; 404 for unknown names. explicit 400 unsupported_capability: pi_hive has no backing store for this write.",
+      "pi_hive_status": "implemented",
+      "notes": "removes a stored endpoint; 404 for unknown names",
       "source": "models.ts:93",
       "query": []
     },

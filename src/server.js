@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { URL } from "node:url";
-import { PI_HIVE_VERSION, serverConfig } from "./config.js";
+import { PI_HIVE_VERSION, modelConfig, serverConfig, workerModelConfig } from "./config.js";
 import { defaultRegistry, notImplementedBody, ROUTE_STATUS } from "./compat/router.js";
 import { installCompatHandlers } from "./compat/install.js";
 import { createColony, listColonies, loadMetadata, colonyPaths } from "./domain/colony.js";
@@ -213,6 +213,20 @@ export class PiHiveServer {
     return this._modelRuntime;
   }
 
+  /** Workers run the `worker_llm` slot when the Models page assigned one. */
+  get workerModelRuntime() {
+    if (this._modelRuntimeIsInjected) return this.modelRuntime;
+    if (!this._workerModelRuntime) {
+      const worker = workerModelConfig();
+      const main = modelConfig();
+      this._workerModelRuntime =
+        worker.modelId === main.modelId && worker.baseUrl === main.baseUrl
+          ? this.modelRuntime
+          : createModelRuntime(worker);
+    }
+    return this._workerModelRuntime;
+  }
+
   /**
    * A model write changes what the next runtime is built from: drop the cached
    * env-derived runtime and every colony runtime, so the next turn of each live
@@ -222,6 +236,7 @@ export class PiHiveServer {
   swapModelRuntime() {
     if (this._modelRuntimeIsInjected) return 0;
     this._modelRuntime = null;
+    this._workerModelRuntime = null;
     const dropped = this.runtimes.size;
     for (const runtime of this.runtimes.values()) runtime.stop();
     this.runtimes.clear();
@@ -454,7 +469,7 @@ export class PiHiveServer {
           const report = await runWorker({
             colony: name,
             queenId: meta.queen_id || "queen_growth",
-            modelRuntime: this.modelRuntime,
+            modelRuntime: this.workerModelRuntime,
             task: body.task || "",
             data: body.data || {},
             profile: body.profile || "default",

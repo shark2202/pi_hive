@@ -42,10 +42,6 @@ import { registerStreamRoutes } from "./handlers/streams.js";
  * Config writes are not in this list — they persist under `hiveHome()/config/`.
  */
 const CONFIG_EXTRA_UNSUPPORTED_WRITES = new Set([
-  "PUT /api/models/slots/:slot",
-  "DELETE /api/models/slots/:slot",
-  "PUT /api/models/endpoints/:endpoint",
-  "DELETE /api/models/endpoints/:endpoint",
   "POST /api/credentials",
   "DELETE /api/credentials/:credential",
   "POST /api/credentials/local",

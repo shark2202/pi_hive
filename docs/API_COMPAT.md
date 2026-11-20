@@ -178,16 +178,16 @@ _pi_hive:_ 6 implemented, 6 partial. Keys are environment-only; credential reads
 
 ## Models (6)
 
-_pi_hive:_ 2 implemented, 4 partial. Overview and endpoint model listing describe the single env-configured OpenAI-compatible model; slot and endpoint mutations answer explicit 400 because there is no runtime model registry.
+_pi_hive:_ 6 implemented. Slots persist (`hiveHome()/config/slots.json`): `llm` writes the saved LLM override `modelConfig()` reads and swaps live sessions, `worker_llm`/`vision_fallback` store a real summary that `workerModelConfig()` honours for worker runs, and `queen:<id>` writes that queen's own llm section (she then appears in `ModelsOverview.queens`). Named endpoints persist in `hiveHome()/config/endpoints.json` (mode 0600 because it holds the optional key; responses only ever expose `has_key`). `GET .../endpoints/:endpoint/models` asks a stored endpoint's `/models` over HTTP (5 s timeout, 502 with the upstream reason when unreachable) and still answers from the catalogue for the env-configured provider.
 
 | Method | Path | Client (source) | Request | Response | SSE events | pi_hive |
 |---|---|---|---|---|---|---|
 | GET | `/models/overview` | models (`models.ts:78`) | — | ModelsOverview | — | implemented |
-| PUT | `/models/slots/:slot` | models (`models.ts:81`) | ModelChoice | {slot, summary, sessions_switched} | — | partial |
-| DELETE | `/models/slots/:slot` | models (`models.ts:84`) | — | {slot, summary: null} | — | partial |
+| PUT | `/models/slots/:slot` | models (`models.ts:81`) | ModelChoice | {slot, summary, sessions_switched} | — | implemented |
+| DELETE | `/models/slots/:slot` | models (`models.ts:84`) | — | {slot, summary: null} | — | implemented |
 | GET | `/models/endpoints/:endpoint/models` | models (`models.ts:87`) | — | {models: EndpointModel[]} | — | implemented |
-| PUT | `/models/endpoints/:endpoint` | models (`models.ts:91`) | inline {api_base?, api_key?} | ModelEndpoint | — | partial |
-| DELETE | `/models/endpoints/:endpoint` | models (`models.ts:93`) | — | {deleted} | — | partial |
+| PUT | `/models/endpoints/:endpoint` | models (`models.ts:91`) | inline {api_base?, api_key?} | ModelEndpoint | — | implemented |
+| DELETE | `/models/endpoints/:endpoint` | models (`models.ts:93`) | — | {deleted} | — | implemented |
 
 ## Configuration (19)
 

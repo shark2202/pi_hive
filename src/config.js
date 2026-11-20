@@ -1,7 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
-import { readLlmOverride } from "./domain/config-store.js";
+import { readLlmOverride, readSlots } from "./domain/config-store.js";
 
 export const PI_HIVE_VERSION = "0.1.0";
 
@@ -23,6 +23,22 @@ export function colonyDir(name) {
 export function ensureDir(dir) {
   fs.mkdirSync(dir, { recursive: true });
   return dir;
+}
+
+/**
+ * The worker model: a stored `worker_llm` slot wins over the main model, so the
+ * Models page's worker assignment is what a worker run actually uses. An
+ * endpoint-backed slot contributes its api_base; the key stays env-only.
+ */
+export function workerModelConfig() {
+  const main = modelConfig();
+  const slot = readSlots().worker_llm;
+  if (!slot || typeof slot.model !== "string" || !slot.model) return main;
+  return {
+    baseUrl: typeof slot.api_base === "string" && slot.api_base ? slot.api_base : main.baseUrl,
+    modelId: slot.model,
+    apiKey: main.apiKey,
+  };
 }
 
 export function modelConfig() {

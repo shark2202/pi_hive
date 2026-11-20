@@ -485,13 +485,6 @@ test("request bodies are read from a Node request stream, like the server passes
 // --- Mutations: explicit 4xx, never 501 or fake success ----------------------
 
 const UNSUPPORTED_MUTATIONS = [
-  ["PUT", "/api/models/slots/llm"],
-  ["DELETE", "/api/models/slots/llm"],
-  ["PUT", "/api/models/slots/worker_llm"],
-  ["DELETE", "/api/models/slots/vision_fallback"],
-  ["PUT", "/api/models/slots/queen:growth"],
-  ["PUT", "/api/models/endpoints/pihive"],
-  ["DELETE", "/api/models/endpoints/pihive"],
   ["POST", "/api/credentials"],
   ["DELETE", "/api/credentials/notion"],
   ["POST", "/api/credentials/local"],
@@ -691,7 +684,7 @@ test("PUT /api/config/rate-limits replaces the table and warns on unusable keys"
   assert.equal(res.body.warnings.length, 2);
   assert.deepEqual((await call(registry, "GET", "/api/config/rate-limits")).body.limits, res.body.limits);
 });
-test("slot and endpoint refusals distinguish unknown names from known gaps", async () => {
+test("slot and endpoint ids are validated before anything is written", async () => {
   const registry = makeRegistry();
 
   const unknownSlot = await call(registry, "PUT", "/api/models/slots/not_a_slot", { body: {} });
@@ -699,19 +692,138 @@ test("slot and endpoint refusals distinguish unknown names from known gaps", asy
   assert.equal(unknownSlot.body.type, "invalid_request");
   assert.match(unknownSlot.body.error, /no slot 'not_a_slot'/);
 
-  const queen = await call(registry, "PUT", "/api/models/slots/queen:growth", { body: {} });
-  assert.equal(queen.status, 400);
-  assert.equal(queen.body.type, "unsupported_capability");
-  assert.match(queen.body.error, /per-queen/);
+  const noChoice = await call(registry, "PUT", "/api/models/slots/worker_llm", { body: {} });
+  assert.equal(noChoice.status, 400);
+  assert.match(noChoice.body.error, /source must be 'catalog' or 'endpoint'/);
+
+  const noModel = await call(registry, "PUT", "/api/models/slots/worker_llm", {
+    body: { source: "catalog", provider: "pihive" },
+  });
+  assert.equal(noModel.status, 400);
+  assert.match(noModel.body.error, /model is required/);
+
+  const unknownEndpointChoice = await call(registry, "PUT", "/api/models/slots/worker_llm", {
+    body: { source: "endpoint", endpoint: "gone", model: "m" },
+  });
+  assert.equal(unknownEndpointChoice.status, 404);
 
   const missingEndpoint = await call(registry, "DELETE", "/api/models/endpoints/gone");
   assert.equal(missingEndpoint.status, 404);
-  assert.deepEqual(missingEndpoint.body, { error: "There's no endpoint 'gone'" });
 
-  const configuredEndpoint = await call(registry, "DELETE", "/api/models/endpoints/pihive");
-  assert.equal(configuredEndpoint.status, 400);
-  assert.equal(configuredEndpoint.body.type, "unsupported_capability");
-  assert.match(configuredEndpoint.body.error, /PI_HIVE_BASE_URL/);
+  const badBase = await call(registry, "PUT", "/api/models/endpoints/local", { body: { api_base: "not-a-url" } });
+  assert.equal(badBase.status, 400);
+  assert.match(badBase.body.error, /absolute URL/);
+
+  const noBase = await call(registry, "PUT", "/api/models/endpoints/local", { body: { api_key: "k" } });
+  assert.equal(noBase.status, 400);
+  assert.match(noBase.body.error, /api_base is required/);
+
+  // Nothing above may have created a file.
+  assert.equal(fs.existsSync(path.join(process.env.PI_HIVE_HOME, "config", "endpoints.json")), false);
+  assert.equal(fs.existsSync(path.join(process.env.PI_HIVE_HOME, "config", "slots.json")), false);
+});
+
+test("a named endpoint round-trips without ever echoing its key", async () => {
+  const registry = makeCombinedRegistry();
+  const saved = await call(registry, "PUT", "/api/models/endpoints/ollama", {
+    body: { api_base: "http://127.0.0.1:11434/v1/", api_key: "endpoint-secret-value" },
+  });
+  assert.equal(saved.status, 200);
+  assert.deepEqual(saved.body, {
+    name: "ollama",
+    api_base: "http://127.0.0.1:11434/v1",
+    builtin: false,
+    has_key: true,
+    running: false,
+  });
+  assert.equal(JSON.stringify(saved.body).includes("endpoint-secret-value"), false);
+
+  // The key is on disk with 0600, outside the repo.
+  const file = path.join(process.env.PI_HIVE_HOME, "config", "endpoints.json");
+  const stored = JSON.parse(fs.readFileSync(file, "utf8"));
+  assert.equal(stored.ollama.api_key, "endpoint-secret-value");
+  if (process.platform !== "win32") {
+    assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+  }
+
+  const edited = await call(registry, "PUT", "/api/models/endpoints/ollama", { body: { api_base: "http://127.0.0.1:8080/v1" } });
+  assert.equal(edited.body.api_base, "http://127.0.0.1:8080/v1");
+  assert.equal(edited.body.has_key, true, "an api_base edit keeps the stored key");
+
+  const cleared = await call(registry, "PUT", "/api/models/endpoints/ollama", { body: { api_key: null } });
+  assert.equal(cleared.body.has_key, false);
+
+  const listed = await call(registry, "GET", "/api/models/overview");
+  assert.deepEqual(
+    listed.body.endpoints.map((endpoint) => endpoint.name),
+    ["ollama"],
+    "the overview lists stored endpoints",
+  );
+
+  const deleted = await call(registry, "DELETE", "/api/models/endpoints/ollama");
+  assert.deepEqual(deleted.body, { deleted: "ollama" });
+  const after = await call(registry, "GET", "/api/models/overview");
+  assert.deepEqual(after.body.endpoints, []);
+});
+
+test("model slots persist and the overview reports them", async () => {
+  const registry = makeCombinedRegistry();
+
+  const worker = await call(registry, "PUT", "/api/models/slots/worker_llm", {
+    body: { source: "catalog", provider: "pihive", model: "worker-model" },
+  });
+  assert.equal(worker.status, 200);
+  assert.equal(worker.body.slot, "worker_llm");
+  assert.equal(worker.body.summary.model, "worker-model");
+  assert.equal(worker.body.summary.source, "catalog");
+
+  const vision = await call(registry, "PUT", "/api/models/slots/vision_fallback", {
+    body: { source: "catalog", provider: "pihive", model: "vision-model" },
+  });
+  assert.equal(vision.status, 200);
+
+  let overview = await call(registry, "GET", "/api/models/overview");
+  assert.equal(overview.body.slots.worker_llm.model, "worker-model");
+  assert.equal(overview.body.slots.vision_fallback.model, "vision-model");
+
+  // The worker runtime really reads this slot.
+  const { workerModelConfig } = await import("../../src/config.js");
+  assert.equal(workerModelConfig().modelId, "worker-model");
+
+  const cleared = await call(registry, "DELETE", "/api/models/slots/worker_llm");
+  assert.deepEqual(cleared.body, { slot: "worker_llm", summary: null });
+  overview = await call(registry, "GET", "/api/models/overview");
+  assert.equal(overview.body.slots.worker_llm, null);
+  assert.notEqual(workerModelConfig().modelId, "worker-model");
+
+  // A queen slot is her own llm section, and it shows up in the overview.
+  const queen = await call(registry, "PUT", "/api/models/slots/queen:growth", {
+    body: { source: "catalog", provider: "pihive", model: "queen-model" },
+  });
+  assert.equal(queen.status, 200);
+  overview = await call(registry, "GET", "/api/models/overview");
+  const growth = overview.body.queens.find((entry) => entry.id === "growth");
+  assert.ok(growth, "a queen with her own model appears in the overview");
+  assert.equal(growth.model, "queen-model");
+
+  await call(registry, "DELETE", "/api/models/slots/queen:growth");
+  overview = await call(registry, "GET", "/api/models/overview");
+  assert.deepEqual(overview.body.queens, []);
+
+  // The main slot writes the override the runtime is built from.
+  const main = await call(registry, "PUT", "/api/models/slots/llm", {
+    body: { source: "catalog", provider: "pihive", model: "main-model" },
+  });
+  assert.equal(main.status, 200);
+  assert.equal(main.body.summary.model, "main-model");
+  assert.equal(typeof main.body.sessions_switched, "number");
+  const llm = await call(registry, "GET", "/api/config/llm");
+  assert.equal(llm.body.model, "main-model");
+
+  const clearedMain = await call(registry, "DELETE", "/api/models/slots/llm");
+  assert.equal(clearedMain.body.summary, null);
+  const back = await call(registry, "GET", "/api/config/llm");
+  assert.notEqual(back.body.model, "main-model");
 });
 
 // --- Hardening ---------------------------------------------------------------

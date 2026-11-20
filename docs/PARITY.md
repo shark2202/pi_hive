@@ -113,14 +113,14 @@
 | MCP definitions + health | ✅ | `/api/mcp/servers*` stores validated definitions in `hiveHome()/mcp_servers.json`; enable/disable/mode/delete persist; health is a real reachability probe (PATH lookup, TCP/TLS, unix socket) recorded on the entry |
 | MCP tool loading | ⬜ | No MCP client: stored servers are never started, and `health` reports `tools: 0` on purpose |
 | Credentials store | 🟡 | Env only; no encrypted store/UI |
-| Model catalog/UI | 🟡 | Env-configured single OpenAI-compatible model |
+| Model catalog/UI | 🟡 | Slots and named endpoints persist (`config/slots.json`, `config/endpoints.json`); `worker_llm` really drives worker runs, `llm` drives every runtime, `queen:<id>` is her own section. `vision_fallback` is stored but the kernel declares text-only input, so nothing reads it |
 | Config writes | ✅ | Provider slots, named provider library (+apply), external skill roots, feature switches, the model override, profile, pacing table and profile avatar persist under `hiveHome()/config/`; a saved model outranks the environment for runtimes built afterwards, `api_key` in a payload is refused |
 
 ## Interface
 
 | Feature | Status | Notes |
 |---|---|---|
-| HTTP API | 🟡 | 171 official routes: 150 implemented + 21 partial + 0 missing; every partial is an explicit 4xx, never a fake success |
+| HTTP API | 🟡 | 171 official routes: 154 implemented + 17 partial + 0 missing; every partial is an explicit 4xx, never a fake success |
 | SSE | ✅ | Per-session events replay + tail from the durable `events.jsonl`; chat deltas + colony events |
 | CLI | 🟡 | serve/colony/chat/worker/playbook/tracker; no skill/mcp/janitor |
 | Official Hive frontend (forked at `frontend/`, built here) | ✅ | Fork source + dist live in this repo; served at `/`; desktop chat verified end-to-end (Queen reply over SSE, last verified 2026-11-19 — not re-run: no model key in this environment); mobile official layout is desktop-first and squeezed |

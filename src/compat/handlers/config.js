@@ -20,7 +20,8 @@
  *
  * Nothing here calls a model or opens a network port.
  */
-import { hasAvatar, readFeatures, readProfile } from "../../domain/config-store.js";
+import { hasAvatar, readEndpoints, readFeatures, readProfile, readSections, readSlots } from "../../domain/config-store.js";
+import { listQueenIds, readLlm as readQueenLlm } from "../../domain/queen-state.js";
 import { listPrompts as listStoredPrompts } from "../../domain/prompt-store.js";
 
 import fs from "node:fs";
@@ -126,19 +127,51 @@ function slotSummary(model) {
   };
 }
 
+/** The judge slot, when a section was saved for it through the API. */
+function judgeSlot() {
+  const judge = readSections().judge ?? null;
+  if (!judge) return { configured: false, model: null, api_base: null };
+  return {
+    configured: true,
+    model: typeof judge.model === "string" ? judge.model : null,
+    api_base: typeof judge.api_base === "string" ? judge.api_base : null,
+  };
+}
+
+/** Queens that carry their own llm section, in the official overview shape. */
+function queensWithOwnModel() {
+  const out = [];
+  for (const id of listQueenIds()) {
+    const section = readQueenLlm(id);
+    if (!section || typeof section.model !== "string") continue;
+    out.push({
+      id,
+      name: id,
+      source: "catalog",
+      provider: typeof section.provider === "string" ? section.provider : null,
+      model: section.model,
+      endpoint: null,
+      subscription: null,
+      api_base: typeof section.api_base === "string" ? section.api_base : null,
+      max_context_tokens: null,
+      has_extra_body: false,
+    });
+  }
+  return out;
+}
+
 /** Official `ModelsOverview` (core/frontend/src/api/models.ts). */
 export function buildModelsOverview() {
   const model = currentModel();
   return {
     slots: {
       llm: slotSummary(model),
-      // pi_hive runs one model; there is no worker/vision slot or judge.
-      worker_llm: null,
-      vision_fallback: null,
+      worker_llm: readSlots().worker_llm ?? null,
+      vision_fallback: readSlots().vision_fallback ?? null,
     },
-    judge: { configured: false, model: null, api_base: null },
-    // No per-queen model configuration exists in pi_hive.
-    queens: [],
+    judge: judgeSlot(),
+    // A queen appears here once she has her own llm section.
+    queens: queensWithOwnModel(),
     providers: [
       {
         id: model.provider,
@@ -155,8 +188,13 @@ export function buildModelsOverview() {
         ],
       },
     ],
-    // No named endpoint registry (the api_base above is the configured endpoint).
-    endpoints: [],
+    endpoints: Object.entries(readEndpoints()).map(([name, entry]) => ({
+      name,
+      api_base: entry.api_base ?? "",
+      builtin: false,
+      has_key: Boolean(entry.api_key),
+      running: false,
+    })),
     subscriptions: [],
   };
 }
