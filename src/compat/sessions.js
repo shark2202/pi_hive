@@ -271,6 +271,44 @@ export class SessionStore {
     return this.update(sessionId, { stopped_at: nowIso(), stop_reason: reason });
   }
 
+  /**
+   * Park a session at its current event cursor.
+   *
+   * The cursor is the byte offset of the last event, so a resume can pick up
+   * exactly where the loop stopped instead of replaying (or skipping) events.
+   * Parking is not stopping: the session stays live and its record stays on disk.
+   */
+  park(sessionId, { reason = "parked" } = {}) {
+    const record = this.get(sessionId);
+    if (!record) return null;
+    return this.update(sessionId, {
+      parked: true,
+      park_reason: reason,
+      parked_at: nowIso(),
+      resume_cursor: this.lastEventCursor(sessionId),
+    });
+  }
+
+  /** The byte offset just past the last event, 0 for an empty log. */
+  lastEventCursor(sessionId) {
+    const file = this.eventsFile(sessionId);
+    try {
+      return fs.statSync(file).size;
+    } catch {
+      return 0;
+    }
+  }
+
+  /** Clear a park. Returns the cursor the loop should continue from. */
+  resume(sessionId) {
+    const record = this.get(sessionId);
+    if (!record) return null;
+    if (record.parked !== true) return { session_id: sessionId, resumed: false, cursor: this.lastEventCursor(sessionId) };
+    const cursor = Number(record.resume_cursor ?? 0);
+    this.update(sessionId, { parked: false, park_reason: null, parked_at: null, resume_cursor: null });
+    return { session_id: sessionId, resumed: true, cursor };
+  }
+
   /** Latest non-stopped session for a colony with at least one message. */
   activeForColony(colonyId) {
     return (

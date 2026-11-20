@@ -1232,3 +1232,50 @@ test("a frozen ctx is not mutated and still resolves through the store fallback"
   const workers = await callJson(registry, "GET", `/api/sessions/${created.session_id}/workers`);
   assert.equal(workers.status, 200, JSON.stringify(workers.body));
 });
+
+test("a session parks at an event cursor and resumes from it", async () => {
+  useHome();
+  createColony({ name: "acme", goal: "park and resume" });
+  const store = new SessionStore();
+  const session = store.create({ colonyId: "acme", queenId: "queen_tech" });
+
+  // Nothing to resume from yet: an empty log parks at cursor 0.
+  const emptyPark = store.park(session.session_id, { reason: "nothing yet" });
+  assert.equal(emptyPark.parked, true);
+  assert.equal(emptyPark.resume_cursor, 0);
+  assert.equal(store.resume(session.session_id).cursor, 0);
+
+  store.appendEvent(session.session_id, { type: "client_input_received", data: { content: "first" } });
+  store.appendEvent(session.session_id, { type: "assistant_message", data: { content: "second" } });
+
+  const parked = store.park(session.session_id, { reason: "waiting on a key" });
+  assert.equal(parked.parked, true);
+  assert.equal(parked.park_reason, "waiting on a key");
+  assert.ok(parked.parked_at);
+  assert.ok(parked.resume_cursor > 0, "the cursor points past the last event");
+
+  // Parking does not stop the session, and it is durable on disk.
+  assert.equal(store.get(session.session_id).stopped_at, null);
+  const reread = new SessionStore().get(session.session_id);
+  assert.equal(reread.parked, true);
+  assert.equal(reread.resume_cursor, parked.resume_cursor);
+
+  // Events appended while parked move the log past the stored cursor.
+  store.appendEvent(session.session_id, { type: "assistant_message", data: { content: "third" } });
+  assert.ok(store.lastEventCursor(session.session_id) > parked.resume_cursor);
+
+  const resumed = store.resume(session.session_id);
+  assert.deepEqual(resumed, { session_id: session.session_id, resumed: true, cursor: parked.resume_cursor });
+  const cleared = store.get(session.session_id);
+  assert.equal(cleared.parked, false);
+  assert.equal(cleared.park_reason, null);
+  assert.equal(cleared.resume_cursor, null);
+
+  // Resuming an unparked session says so and reports the live cursor.
+  const again = store.resume(session.session_id);
+  assert.equal(again.resumed, false);
+  assert.equal(again.cursor, store.lastEventCursor(session.session_id));
+
+  assert.equal(store.park("sess-nope"), null);
+  assert.equal(store.resume("sess-nope"), null);
+});

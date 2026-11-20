@@ -21,10 +21,10 @@
 | Streaming events / deltas | ✅ | `queen_event` + `delta`; HTTP SSE |
 | Turn/tool lifecycle | ✅ | pi kernel |
 | Session transcript persistence | 🟡 | JSON per Queen; loaded on restart; no compaction |
-| Crash-safe park/resume | 🟡 | Transcript loads; no explicit park state machine |
+| Crash-safe park/resume | ✅ | `SessionStore.park()` stores `parked_at`/`park_reason`/`resume_cursor` (byte offset past the last event) on disk; `resume()` returns that cursor and clears the flag; parking is not stopping |
 | Tool registration | ✅ | Hive tools registered as pi `AgentTool`s |
 | Tool execution modes | ✅ | pi parallel/sequential support |
-| Budget/turn limits | 🟡 | `maxTurns` per Agent; no Hive token/tool budget accounting |
+| Budget/turn limits | ✅ | `maxTurns` per Agent plus real metering (`colonies/<name>/metering.json`, per day and total) and `budgetState()` against the goal's `budget.max_tokens`; no per-tool budget |
 
 ## Organization
 
@@ -32,6 +32,8 @@
 |---|---|---|
 | Colony directory | ✅ | `~/.pi-hive/colonies/<name>/` |
 | Colony metadata | ✅ | `metadata.json` |
+| Goal & Outcome judge | ✅ | `colonies/<name>/goal.json` keeps the objective, success criteria (each with an `observable` check) and constraints; `judgeGoal` records accept/retry/escalate per attempt and escalates when `budget.max_attempts` runs out |
+| Stall / doom-loop guard | ✅ | `loop-guard.json` keeps a 12-turn window: 4 identical actions or 3 empty turns park the loop with a reason; `clearPark` resets the window |
 | Colony list | ✅ | `GET /api/colonies`, CLI |
 | Colony import/export | ⬜ | tar import/export not implemented |
 | Global team data | ✅ | `/api/global/data/*` runs against `hiveHome()/global-data/team.db`: schema-driven tables/rows, insert (minted pk, `409` on duplicate), pk-addressed update/delete, filter/search/sort, group counts, inferred foreign keys and a `_global_changes` feed. Local file, not Hive's cloud team DB — no cross-machine sync |
@@ -41,7 +43,7 @@
 | Multiple colonies per Queen | ✅ | By directory/metadata |
 | Worker | ✅ | Ephemeral, one task, narrow tools |
 | Worker profiles | 🟡 | Stored in metadata; not enforced for tool/credential routing |
-| Worker resume | ⬜ | No `resume_worker_ids` |
+| Worker resume + grace | ✅ | `runWorker({resume})` seeds the prompt with the previous report (`normalizeResume`/`resumePrompt`, hostile input coerced away), and a run that never calls `report_to_parent` gets exactly one `GRACE_PROMPT` turn; the fallback report records `grace_turn`/`resumed_from` |
 | Worker concurrency | ✅ | Queue + `maxConcurrentWorkers` |
 | Worker report | ✅ | `report_to_parent` → `[WORKER_REPORT]` |
 | Queen Mail | 🟡 | In-process letters, allowlist by registered Queen, max depth/daily limit; no Claude Code peer, no restart routing |
@@ -141,7 +143,7 @@
 | Custom prompt library | ✅ | `hiveHome()/prompts/prompts.json`; create mints the id and normalizes skills/tags, delete is by id, list is newest first |
 | Agent delete / metadata | ✅ | An agent is a colony dir: soft delete sets `metadata.deleted`, `purge` removes `colonies/<name>` + `agents/<name>`, `PATCH` writes `icon` only |
 | Workspace/cwd binding | ✅ | Colony `workspace` or `PI_HIVE_WORKSPACE`; file/terminal tools scoped to it |
-| Cost accounting | ⬜ | No token/$ metering |
+| Cost accounting | ✅ | `metering.json` records `tokens_in`, `tokens_out`, `cost_usd` and turns per colony, per day and in total, summed from assistant `usage` |
 | Budget hard stop | ⬜ | Turn limits only |
 | Audit log | 🟡 | Playbook run log + worker JSON; no full event audit |
 | Backup/restore | 🟡 | Plain directory; no CLI import/export |
