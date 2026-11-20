@@ -1,7 +1,7 @@
 # Hive Frontend API Inventory — Independent QA (lane C1)
 
 **Lane:** `contract-qa` · **Date:** 2026-11-19 · **Scope:** official Hive web frontend
-(`/Users/mac/hive/core/frontend/src`), same-origin `/api` surface only.
+(`<hive-core>/frontend/src`), same-origin `/api` surface only.
 
 ## Method
 

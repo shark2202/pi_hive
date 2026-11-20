@@ -34,7 +34,7 @@ contract, the shell, and the evidence needed for the next cycles.
 
 - Work only inside `pi_hive/.lanes/<lane>/`; never edit the main worktree.
 - No `npm install`, no dependency changes, no commits.
-- The frontend is forked and maintained at `frontend/`; `/Users/mac/hive/core/frontend` is the read-only reference.
+- The frontend is forked and maintained at `frontend/`; `<hive-core>/frontend` is the read-only reference.
 - Write `LANE_STATUS.json` with `updated_at`, `phase`, `blocked`, `next`.
 - Write `LANE_REPORT.md` with files changed, commands run, observed results, gaps.
 - Finish with `node --check` on changed JS and `npm test` when tests exist.

@@ -3,7 +3,7 @@
     "generated_at": "2026-11-19T18:20:00+08:00",
     "method": "independent grep + balanced-delimiter scan of TypeScript call sites; no AST dependency; manually cross-read every api module",
     "scope": "core/frontend/src/api/*.ts plus ad-hoc api.* call sites in components/hooks/pages/lib; same-origin /api surface only",
-    "source_root": "/Users/mac/hive/core/frontend/src",
+    "source_root": "<hive-core>/frontend/src",
     "client_modules": 20,
     "files_with_calls": 25,
     "raw_api_call_sites": 171,

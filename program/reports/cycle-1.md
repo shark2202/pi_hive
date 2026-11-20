@@ -29,7 +29,7 @@ contract. The first cycle is contract-first, not full endpoint implementation.
 
 ```text
 node program/qa/check.mjs
-PASS official dist index exists — /Users/mac/hive/core/frontend/dist/index.html
+PASS official dist index exists — <hive-core>/frontend/dist/index.html
 PASS index references assets
 PASS first JS asset present — /assets/index-DpsIUdOC.js
 warnings=1 (contract missing; cartographer lane)

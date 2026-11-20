@@ -5,7 +5,7 @@ Date: 2026-11-20. Scope: `frontend/`, `src/server.js`, `program/qa/check.mjs`, `
 ## What changed
 
 - Official frontend forked into this repo at `frontend/` (source copied from
-  `/Users/mac/hive/core/frontend`, excluding `node_modules/` and `dist/`).
+  `<hive-core>/frontend`, excluding `node_modules/` and `dist/`).
 - `frontend/vite.config.ts`: app version now read from this repo's root
   `package.json` instead of `core/pyproject.toml`; dev proxy targets
   `127.0.0.1:${PI_HIVE_PORT||8790}` instead of `localhost:8787`.
@@ -32,7 +32,7 @@ Date: 2026-11-20. Scope: `frontend/`, `src/server.js`, `program/qa/check.mjs`, `
 | `GET /ui/` (native dashboard) | 200 |
 | `npm test` | 213 pass / 0 fail (core 24 + compat 189 + compat-shell included) |
 | `PI_HIVE_BASE=http://127.0.0.1:8790 node program/qa/check.mjs` | `failures=0 warnings=0`, dist path is `pi_hive/frontend/dist` |
-| machine paths in runtime | `grep -rn '/Users/mac' src tests program/qa program/contracts scripts` → 0 hits |
+| machine paths in runtime | `grep -rn '<home>' src tests program/qa program/contracts scripts` → 0 hits |
 
 ## Not verified (must not be claimed)
 

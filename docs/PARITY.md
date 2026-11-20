@@ -129,6 +129,7 @@
 | Web dashboard | 🟡 | Native `/ui/`: colonies, chat (SSE), workers, tracker, playbooks, triggers, inbox, Soul; not Hive UI parity |
 | API auth | ⬜ | Local-only; no auth |
 | Import/export | ⬜ | No tar import/export |
+| Portability | ✅ | macOS + Linux (`node:24-alpine` in Docker): 239/239 tests, server boots and serves `/` + `/ui/` from the repo's own `frontend/dist`; no tracked symlinks, no absolute host paths, `package-lock.json` committed. Windows is code-level only (no runner) — see `program/reports/cross-platform.md` |
 | Janitor/retention | ⬜ | No retention policy |
 
 ## Security and operations

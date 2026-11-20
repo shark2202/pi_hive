@@ -2,7 +2,7 @@
 
 > 交接时间：2026-11-19 19:43 +08:00
 > 交接对象：从零开始接手 `pi_hive` 的 coding agent
-> 仓库：`/Users/mac/hive/pi_hive`
+> 仓库：`<pi-hive>`
 > 一句话：**核心链路可运行，官方前端 API 路由面已补齐；但 `docs/key_concepts` 里的 Hive 机制并未全部实现。**
 
 先读这五个文件，再动手：
@@ -29,8 +29,8 @@ pi_hive                        → Colony / Queen / Worker / Tracker / Plan /
 硬约束：
 
 - **不要重写 agent loop。** `Agent`、工具执行、流式事件、对话轮次由 pi-agent-core 提供。
-- **不要修改 Python Hive**：`/Users/mac/hive/core` 是参考实现和官方前端来源，只读。
-- **前端独立维护**：官方前端已 fork 到仓库内 `frontend/`，产物 `frontend/dist` 服务在 `/`；`/Users/mac/hive/core/frontend` 只作只读参照来源。
+- **不要修改 Python Hive**：`<hive-core>` 是参考实现和官方前端来源，只读。
+- **前端独立维护**：官方前端已 fork 到仓库内 `frontend/`，产物 `frontend/dist` 服务在 `/`；`<hive-core>/frontend` 只作只读参照来源。
 - 官方前端是固定客户端；要让它工作，应补 `/api` 兼容层，而不是改 `dist`。
 - 原生 dashboard 在 `/ui/`，是 `src/ui` 的 vanilla JS，不是官方 UI 的替代品。
 - `go_hive` 是另一个独立 Go 工程；不要把两边的状态混在一起。
@@ -42,7 +42,7 @@ pi_hive                        → Colony / Queen / Worker / Tracker / Plan /
 ### 已验证的测试
 
 ```bash
-cd /Users/mac/hive/pi_hive
+cd <pi-hive>
 npm test
 node --test tests/compat/*.test.js
 node --test tests/compat-shell.test.js
@@ -131,13 +131,13 @@ node_modules/@earendil-works/pi-agent-core
 node_modules/@earendil-works/pi-ai
 node_modules/@earendil-works/pi-schema
 node_modules/typebox
-  → /Users/mac/.npm-global/lib/node_modules/@earendil-works/pi-coding-agent/node_modules/...
+  → <global-npm>/lib/node_modules/@earendil-works/pi-coding-agent/node_modules/...
 ```
 
 先验证依赖是否可 import：
 
 ```bash
-cd /Users/mac/hive/pi_hive
+cd <pi-hive>
 node -e "import('@earendil-works/pi-agent-core').then(()=>console.log('deps ok'))"
 ```
 
@@ -150,7 +150,7 @@ node -e "import('@earendil-works/pi-agent-core').then(()=>console.log('deps ok')
 ### 3.3 环境变量
 
 ```bash
-export PI_HIVE_HOME="/Users/mac/hive/pi_hive/.tmp-home"   # 验证用；生产默认 ~/.pi-hive
+export PI_HIVE_HOME="<pi-hive>/.tmp-home"   # 验证用；生产默认 ~/.pi-hive
 export PI_HIVE_API_KEY="..."                             # 或 BROADTOKEN_API_KEY
 export PI_HIVE_BASE_URL="https://token.tokenbroad.com/v1"
 export PI_HIVE_MODEL="deepseek-flash-1017"
@@ -174,7 +174,7 @@ export HIVE_FRONTEND_DIST=$PWD/frontend/dist
 ### 3.4 第一次冒烟
 
 ```bash
-cd /Users/mac/hive/pi_hive
+cd <pi-hive>
 export PI_HIVE_HOME="$PWD/.tmp-home"
 export PI_HIVE_API_KEY="..."   # 真实值不要写入文件
 
@@ -193,7 +193,7 @@ node src/cli.js chat smoke \
 另开一个 shell：
 
 ```bash
-cd /Users/mac/hive/pi_hive
+cd <pi-hive>
 export PI_HIVE_HOME="$PWD/.tmp-home"
 export PI_HIVE_API_KEY="..."
 export PI_HIVE_PORT=8790
@@ -523,7 +523,7 @@ Queen → spawn_worker → worker → tracker_upsert
 
 - 不要在未明确要求时 `commit` / `push`。
 - 不要把密钥、`.tmp-home`、真实 colony 数据提交。
-- 不要修改 `/Users/mac/hive/core`；官方前端已 fork 到 `frontend/` 独立维护。
+- 不要修改 `<hive-core>`；官方前端已 fork 到 `frontend/` 独立维护。
 - 不要重写 pi-agent-core 的 loop。
 - 不要用 501 或假成功清契约；partial 就标 partial。
 - 不要用 `npm ci` 破坏当前 symlink 依赖。

@@ -7,7 +7,7 @@
 
 Date: 2026-11-19 18:27 +08:00
 Server: `pi_hive serve` on `127.0.0.1:8801`, `HIVE_HOME=.tmp-compat`
-Frontend: `/Users/mac/hive/core/frontend/dist` served unchanged by `src/server.js`
+Frontend: `<hive-core>/frontend/dist` served unchanged by `src/server.js`
 Screenshots: `program/reports/frontend-boot-desktop.png` (1440×900), `program/reports/frontend-boot-mobile.png` (390×844)
 
 ## Result

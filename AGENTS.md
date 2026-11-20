@@ -9,7 +9,7 @@
 - Do not commit generated data (`.tmp-home/`, `node_modules/`, colony data).
 - Playbooks are JavaScript modules (`meta` + `async run(ctx)`), not Python. Keep the contract in `docs/ARCHITECTURE.md` in sync.
 - The native dashboard is vanilla JS in `src/ui`, served at `/ui/`; no build step, no framework.
-- `/` serves the official Hive frontend from `/Users/mac/hive/core/frontend/dist` (override `HIVE_FRONTEND_DIST`). Do not edit that build; add compatibility API handlers instead.
+- `/` serves the official Hive frontend from `<hive-core>/frontend/dist` (override `HIVE_FRONTEND_DIST`). Do not edit that build; add compatibility API handlers instead.
 - Before claiming a native UI change works, verify `/ui/` at desktop (1440x900) and mobile (390x844) widths: no horizontal overflow, no overlap, and chat/SSE works. The official frontend is desktop-first; do not claim it is responsive until verified.
 - Sentinel is opt-in (`sentinel_enabled` on colony or `PI_HIVE_SENTINEL=1`); it writes `inbox.jsonl` and can POST to `PI_HIVE_SENTINEL_WEBHOOK`.
 - Prefer small modules under `src/domain`, `src/kernel`, `src/runtime`; avoid a growing `server.js`.
