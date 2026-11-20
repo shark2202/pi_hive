@@ -262,12 +262,12 @@ _pi_hive:_ all three implemented from the colony plan.json: list, unarchive and 
 
 ## Prompts (3)
 
-_pi_hive:_ 1 implemented, 2 partial. GET /prompts returns the official empty list; create/delete answer explicit 400 because pi_hive has no prompt library.
+_pi_hive:_ 3 implemented. Prompts live in `hiveHome()/prompts/prompts.json` (`src/domain/prompt-store.js`): `POST` mints `prm-<12 hex>`, lowercases/de-duplicates `skills` and `tags`, defaults a blank category to `General`, and `DELETE` removes by id (`404` when absent). `GET` lists newest first. This is also the update path, as the client creates-then-deletes.
 
 | Method | Path | Client (source) | Request | Response | SSE events | pi_hive |
 |---|---|---|---|---|---|---|
 | GET | `/prompts` | prompts (`prompts.ts:19`) | — | {prompts: CustomPrompt[]} | — | implemented |
-| POST | `/prompts` | prompts (`prompts.ts:22`) | inline {title, category, content, skills} | CustomPrompt | — | partial |
+| POST | `/prompts` | prompts (`prompts.ts:22`) | inline {title, category, content, skills} | CustomPrompt | — | implemented |
 | DELETE | `/prompts/:prompt` | prompts (`prompts.ts:61`) | — | {deleted} | — | partial |
 
 ## Data (colony tracker + global team DB) (13)
@@ -292,13 +292,13 @@ _pi_hive:_ 13 implemented. Colony tracker table inventory, paged rows, change fe
 
 ## Agents / discovery (3)
 
-_pi_hive:_ 1 implemented, 2 partial. GET /discover is built from real colonies; DELETE /agents and PATCH /agents/metadata answer explicit 400 because pi_hive has no agents store.
+_pi_hive:_ 3 implemented. `GET /discover` is built from real colonies; a pi_hive agent *is* a colony directory, so `DELETE /agents` resolves the path's basename against `colonies/` and `agents/` (`404` for anything else), soft-deletes by setting `metadata.deleted`, or purges both directories with `purge: true`. `PATCH /agents/metadata` writes `icon` into `metadata.json` (the field the Org Chart sets) and refuses any other key rather than half-applying it.
 
 | Method | Path | Client (source) | Request | Response | SSE events | pi_hive |
 |---|---|---|---|---|---|---|
 | GET | `/discover` | agents (`agents.ts:5`) | — | DiscoverResult | — | implemented |
-| DELETE | `/agents` | agents (`agents.ts:11`) | inline {agent_path, purge} | {deleted, purged} | — | partial |
-| PATCH | `/agents/metadata` | agents (`agents.ts:18`) | inline {agent_path, icon?} | {ok} | — | partial |
+| DELETE | `/agents` | agents (`agents.ts:11`) | inline {agent_path, purge} | {deleted, purged} | — | implemented |
+| PATCH | `/agents/metadata` | agents (`agents.ts:18`) | inline {agent_path, icon?} | {ok} | — | implemented |
 
 ## Workers (7)
 

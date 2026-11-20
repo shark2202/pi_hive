@@ -15,7 +15,7 @@ import path from "node:path";
 
 import { RouteRegistry } from "../../src/compat/router.js";
 import { coloniesDir, colonyDir, hiveHome } from "../../src/config.js";
-import { colonyPaths, createColony } from "../../src/domain/colony.js";
+import { colonyPaths, createColony, loadMetadata } from "../../src/domain/colony.js";
 import { writeSkill } from "../../src/domain/skills.js";
 import {
   CATALOG_ROUTE_SPECS,
@@ -170,7 +170,7 @@ test("registers all 22 enumerated catalogue routes with honest metadata", () => 
     assert.ok(["full", "limited"].includes(match.route.meta.compatibility), `${key} compatibility`);
   }
 
-  assert.deepEqual(catalogCounts(), { total: 22, full: 15, limited: 7 });
+  assert.deepEqual(catalogCounts(), { total: 22, full: 19, limited: 3 });
 
   // Static routes must win over the dynamic detail/body routes.
   assert.equal(registry.match("GET", "/api/skills/scopes").route.path, "/api/skills/scopes");
@@ -674,7 +674,7 @@ test("POST reload is an honest no-op because pi_hive reads disk per GET", async 
 // Explicitly unsupported surfaces
 // ---------------------------------------------------------------------------
 
-test("upload, prompt mutations, and agent mutations return explicit 400s", async () => {
+test("upload stays a 400; prompts and agent mutations are real", async () => {
   useHome();
   seedColony("acme", "queen_tech");
   const registry = makeRegistry();
@@ -692,11 +692,16 @@ test("upload, prompt mutations, and agent mutations return explicit 400s", async
   assert.deepEqual(prompts.body, { prompts: [] });
 
   const createdPrompt = await call(registry, "POST", "/api/prompts", {
-    body: { title: "T", category: "custom", content: "C" },
+    body: { title: "T", category: "custom", content: "C", skills: ["Review", "review", " "], tags: ["Ops"] },
   });
-  expectStatus(createdPrompt, 400);
-  assert.equal(createdPrompt.body.type, "unsupported");
-  assert.match(createdPrompt.body.error, /no prompt library/);
+  expectStatus(createdPrompt, 200);
+  assert.match(createdPrompt.body.id, /^prm-[0-9a-f]{12}$/);
+  assert.equal(createdPrompt.body.title, "T");
+  assert.equal(createdPrompt.body.category, "custom");
+  assert.equal(createdPrompt.body.content, "C");
+  assert.deepEqual(createdPrompt.body.skills, ["review"], "skills are lowercased and deduped");
+  assert.deepEqual(createdPrompt.body.tags, ["ops"]);
+  assert.equal(createdPrompt.body.custom, true);
 
   expectStatus(
     await call(registry, "POST", "/api/prompts", { body: { title: "T" } }),
@@ -707,31 +712,81 @@ test("upload, prompt mutations, and agent mutations return explicit 400s", async
   expectStatus(badPromptJson, 400);
   assert.match(badPromptJson.body.error, /invalid JSON/);
 
-  const deletedPrompt = await call(registry, "DELETE", "/api/prompts/custom_1");
-  expectStatus(deletedPrompt, 400);
-  assert.equal(deletedPrompt.body.type, "unsupported");
-
-  const deletedAgent = await call(registry, "DELETE", "/api/agents", {
-    body: { agent_path: "/tmp/agent", purge: false },
+  const second = await call(registry, "POST", "/api/prompts", {
+    body: { title: "Second", category: "", content: "D" },
   });
-  expectStatus(deletedAgent, 400);
-  assert.equal(deletedAgent.body.type, "unsupported");
-  assert.match(deletedAgent.body.error, /no agents store/);
+  expectStatus(second, 200);
+  assert.equal(second.body.category, "General", "a blank category falls back to General");
+
+  const listed = await call(registry, "GET", "/api/prompts");
+  expectStatus(listed, 200);
+  assert.deepEqual(listed.body.prompts.map((entry) => entry.title), ["Second", "T"], "newest first");
+
+  // The store is on disk, so a second registry sees the same prompts.
+  const reread = await call(makeRegistry(), "GET", "/api/prompts");
+  assert.equal(reread.body.prompts.length, 2);
+
+  const deletedPrompt = await call(registry, "DELETE", `/api/prompts/${createdPrompt.body.id}`);
+  expectStatus(deletedPrompt, 200);
+  assert.deepEqual(deletedPrompt.body, { deleted: createdPrompt.body.id });
+
+  const gone = await call(registry, "DELETE", `/api/prompts/${createdPrompt.body.id}`);
+  expectStatus(gone, 404);
+
+  const afterDelete = await call(registry, "GET", "/api/prompts");
+  assert.deepEqual(afterDelete.body.prompts.map((entry) => entry.title), ["Second"]);
+
+  // Agents are colony directories: soft delete, an icon patch, then purge.
+  const agentPath = colonyPaths("acme").dir;
+  const deletedAgent = await call(registry, "DELETE", "/api/agents", {
+    body: { agent_path: "/tmp/not-a-colony", purge: false },
+  });
+  expectStatus(deletedAgent, 404);
+
+  expectStatus(
+    await call(registry, "PATCH", "/api/agents/metadata", { body: { agent_path: agentPath, icon: "rocket" } }),
+    200,
+  );
+  assert.equal(loadMetadata("acme").icon, "rocket");
+
+  const soft = await call(registry, "DELETE", "/api/agents", { body: { agent_path: agentPath } });
+  expectStatus(soft, 200);
+  assert.deepEqual(soft.body, { deleted: "acme", purged: false });
+  assert.equal(loadMetadata("acme").deleted, true);
+  assert.equal(fs.existsSync(agentPath), true, "a soft delete keeps the data");
+
+  const purge = await call(registry, "DELETE", "/api/agents", {
+    body: { agent_path: agentPath, purge: true },
+  });
+  expectStatus(purge, 200);
+  assert.deepEqual(purge.body, { deleted: "acme", purged: true });
+  assert.equal(fs.existsSync(agentPath), false, "a purge removes the colony directory");
+
+  expectStatus(
+    await call(registry, "PATCH", "/api/agents/metadata", { body: { agent_path: agentPath, icon: "x" } }),
+    404,
+  );
+  expectStatus(
+    await call(registry, "PATCH", "/api/agents/metadata", { body: { agent_path: "/tmp/not-a-colony" } }),
+    404,
+  );
 
   const missingPath = await call(registry, "DELETE", "/api/agents", { body: {} });
   expectStatus(missingPath, 400);
   assert.match(missingPath.body.error, /agent_path is required/);
   expectStatus(await call(registry, "DELETE", "/api/agents", { body: "{bad" }), 400);
 
-  const metadata = await call(registry, "PATCH", "/api/agents/metadata", {
-    body: { agent_path: "/tmp/agent", icon: "rocket" },
-  });
-  expectStatus(metadata, 400);
-  assert.equal(metadata.body.type, "unsupported");
-  assert.match(metadata.body.error, /no agents metadata store/);
-
   expectStatus(await call(registry, "PATCH", "/api/agents/metadata", { body: {} }), 400);
   expectStatus(await call(registry, "PATCH", "/api/agents/metadata", { body: "{bad" }), 400);
+
+  // Only icon is writable here; anything else is refused rather than half-applied.
+  createColony({ name: "beta", goal: "second" });
+  const betaPath = colonyPaths("beta").dir;
+  const unsupportedField = await call(registry, "PATCH", "/api/agents/metadata", {
+    body: { agent_path: betaPath, goal: "rewritten" },
+  });
+  expectStatus(unsupportedField, 400);
+  assert.match(unsupportedField.body.error, /unsupported metadata field 'goal'/);
 });
 
 test("skill-install routes are empty/400 because pi_hive has no queue", async () => {

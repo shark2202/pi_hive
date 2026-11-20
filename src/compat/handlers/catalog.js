@@ -31,8 +31,9 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { coloniesDir, colonyDir, hiveHome } from "../../config.js";
-import { colonyPaths, loadMetadata } from "../../domain/colony.js";
+import { colonyPaths, loadMetadata, saveMetadata } from "../../domain/colony.js";
 import { listSkills } from "../../domain/skills.js";
+import { createPrompt as storeCreatePrompt, deletePrompt as storeDeletePrompt, listPrompts as storeListPrompts } from "../../domain/prompt-store.js";
 import { ROUTE_STATUS } from "../router.js";
 
 // ---------------------------------------------------------------------------
@@ -895,27 +896,39 @@ async function decideSkillInstall(args) {
 }
 
 // ---------------------------------------------------------------------------
-// Prompts (pi_hive has no prompt library)
+// Prompts (real custom_prompts store under hiveHome()/prompts)
 // ---------------------------------------------------------------------------
 
 async function listPrompts() {
-  return ok({ prompts: [] });
+  return ok({ prompts: storeListPrompts() });
 }
 
 async function createPrompt(args) {
   const payload = await readObjectBody(args.req);
   const title = typeof payload.title === "string" ? payload.title.trim() : "";
-  const content = typeof payload.content === "string" ? payload.content.trim() : "";
-  if (!title || !content) return fail(400, "Title and content are required");
-  return failUnsupported(
-    "prompt creation is not supported: pi_hive has no prompt library or custom_prompts store",
-  );
+  const content = typeof payload.content === "string" ? payload.content : "";
+  if (!title || !content.trim()) return fail(400, "Title and content are required");
+  if (payload.skills !== undefined && !Array.isArray(payload.skills)) {
+    return fail(400, "skills must be a list of skill names");
+  }
+  if (payload.tags !== undefined && !Array.isArray(payload.tags)) {
+    return fail(400, "tags must be a list of strings");
+  }
+  const entry = storeCreatePrompt({
+    title,
+    category: payload.category,
+    content,
+    skills: payload.skills,
+    tags: payload.tags,
+  });
+  return { status: 200, body: entry };
 }
 
-async function deletePrompt() {
-  return failUnsupported(
-    "prompt deletion is not supported: pi_hive has no prompt library or custom_prompts store",
-  );
+async function deletePrompt(args) {
+  const id = String(args?.params?.prompt ?? "");
+  if (!id) return fail(400, "prompt id is required");
+  if (!storeDeletePrompt(id)) return fail(404, `Prompt '${id}' not found`);
+  return ok({ deleted: id });
 }
 
 // ---------------------------------------------------------------------------
@@ -1160,29 +1173,101 @@ async function deleteMemory(args) {
 }
 
 // ---------------------------------------------------------------------------
-// Agents (pi_hive has colonies, not an agents store)
+// Agents (a pi_hive agent is a colony directory)
 // ---------------------------------------------------------------------------
+
+/**
+ * Map an official `agent_path` onto the colony it names. Discovery reports
+ * `colonies/<name>`; the desktop may also hand back `agents/<name>` or a path
+ * from another machine, so compare basenames against real colony dirs instead
+ * of string-equality on the absolute path.
+ */
+function resolveAgentPath(raw) {
+  if (typeof raw !== "string" || !raw.trim()) return { error: "agent_path is required" };
+  const cleaned = raw.trim().replace(/[\\/]+$/, "");
+  const base = path.basename(cleaned);
+  if (!/^[A-Za-z0-9][A-Za-z0-9._ -]{0,63}$/.test(base)) {
+    return { error: `agent_path is not a colony directory: ${raw}` };
+  }
+  const colonyD = colonyDir(base);
+  const agentD = path.join(hiveHome(), "agents", base);
+  if (!fs.existsSync(colonyD) && !fs.existsSync(agentD)) {
+    return { error: `no agent at ${raw}`, status: 404 };
+  }
+  return { name: base, colonyDir: colonyD, agentDir: agentD };
+}
 
 async function deleteAgent(args) {
   const payload = await readObjectBody(args.req);
-  if (typeof payload.agent_path !== "string" || !payload.agent_path.trim()) {
-    return fail(400, "agent_path is required");
+  const resolved = resolveAgentPath(payload.agent_path);
+  if (resolved.error) return fail(resolved.status ?? 400, resolved.error);
+  const purge = payload.purge === true;
+
+  if (purge) {
+    for (const dir of [resolved.colonyDir, resolved.agentDir]) {
+      if (!fs.existsSync(dir)) continue;
+      try {
+        fs.rmSync(dir, { recursive: true, force: true });
+      } catch (err) {
+        return fail(500, `failed to purge ${dir}: ${err.message}`);
+      }
+    }
+    return ok({ deleted: resolved.name, purged: true });
   }
-  return failUnsupported(
-    "agent deletion is not supported: pi_hive has no agents store; " +
-      "colonies are managed through the colony API",
-  );
+
+  // Soft delete: keep the data, hide the colony from discovery.
+  if (fs.existsSync(resolved.colonyDir)) {
+    let metadata = {};
+    try {
+      metadata = JSON.parse(fs.readFileSync(path.join(resolved.colonyDir, "metadata.json"), "utf8"));
+    } catch {
+      metadata = {};
+    }
+    try {
+      saveMetadata(resolved.name, { ...metadata, id: metadata.id || resolved.name, deleted: true });
+    } catch (err) {
+      return fail(500, `failed to mark ${resolved.name} deleted: ${err.message}`);
+    }
+  }
+  return ok({ deleted: resolved.name, purged: false });
 }
+
+/** Fields the desktop may write here. Everything else stays colony-API only. */
+const AGENT_METADATA_FIELDS = new Set(["icon"]);
 
 async function updateAgentMetadata(args) {
   const payload = await readObjectBody(args.req);
-  if (typeof payload.agent_path !== "string" || !payload.agent_path.trim()) {
-    return fail(400, "agent_path is required");
+  const resolved = resolveAgentPath(payload.agent_path);
+  if (resolved.error) return fail(resolved.status ?? 400, resolved.error);
+
+  const patch = {};
+  for (const [key, value] of Object.entries(payload)) {
+    if (key === "agent_path") continue;
+    if (!AGENT_METADATA_FIELDS.has(key)) {
+      return fail(400, `unsupported metadata field '${key}'; supported: ${[...AGENT_METADATA_FIELDS].join(", ")}`);
+    }
+    if (value !== null && typeof value !== "string") {
+      return fail(400, `'${key}' must be a string or null`);
+    }
+    patch[key] = typeof value === "string" ? value.trim() || null : null;
   }
-  return failUnsupported(
-    "agent metadata updates are not supported: pi_hive has no agents metadata " +
-      "store; colony metadata is managed through the colony API",
-  );
+  if (Object.keys(patch).length === 0) return fail(400, "no metadata fields supplied");
+
+  if (!fs.existsSync(resolved.colonyDir)) {
+    return fail(404, `colony '${resolved.name}' has no metadata.json to update`);
+  }
+  let metadata;
+  try {
+    metadata = JSON.parse(fs.readFileSync(path.join(resolved.colonyDir, "metadata.json"), "utf8"));
+  } catch (err) {
+    return fail(500, `metadata.json is not valid JSON: ${err.message}`);
+  }
+  try {
+    saveMetadata(resolved.name, { ...metadata, ...patch, updated_at: new Date().toISOString() });
+  } catch (err) {
+    return fail(500, `failed to save metadata: ${err.message}`);
+  }
+  return ok({ ok: true });
 }
 
 // ---------------------------------------------------------------------------
@@ -1296,21 +1381,21 @@ export const CATALOG_ROUTE_SPECS = Object.freeze(
       method: "GET",
       path: "/api/prompts",
       compatibility: FULL,
-      description: "empty official prompt list: pi_hive has no prompt library",
+      description: "the stored custom prompts, newest first",
       handler: listPrompts,
     },
     {
       method: "POST",
       path: "/api/prompts",
-      compatibility: LIMITED,
-      description: "explicit 400: pi_hive has no prompt library",
+      compatibility: FULL,
+      description: "creates a custom prompt (minted id, skills/tags normalized)",
       handler: createPrompt,
     },
     {
       method: "DELETE",
       path: "/api/prompts/:prompt",
-      compatibility: LIMITED,
-      description: "explicit 400: pi_hive has no prompt library",
+      compatibility: FULL,
+      description: "deletes a stored prompt; 404 for an unknown id",
       handler: deletePrompt,
     },
     {
@@ -1344,15 +1429,15 @@ export const CATALOG_ROUTE_SPECS = Object.freeze(
     {
       method: "DELETE",
       path: "/api/agents",
-      compatibility: LIMITED,
-      description: "explicit 400: pi_hive has no agents store",
+      compatibility: FULL,
+      description: "soft-deletes (metadata.deleted) or purges the colony an agent path names",
       handler: deleteAgent,
     },
     {
       method: "PATCH",
       path: "/api/agents/metadata",
-      compatibility: LIMITED,
-      description: "explicit 400: pi_hive has no agents metadata store",
+      compatibility: FULL,
+      description: "writes icon (and only icon) into the colony's metadata.json",
       handler: updateAgentMetadata,
     },
   ].map((spec) => Object.freeze(spec)),

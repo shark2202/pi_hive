@@ -21,6 +21,7 @@
  * Nothing here calls a model or opens a network port.
  */
 import { hasAvatar, readFeatures, readProfile } from "../../domain/config-store.js";
+import { listPrompts as listStoredPrompts } from "../../domain/prompt-store.js";
 
 import fs from "node:fs";
 import path from "node:path";
@@ -354,9 +355,9 @@ export function buildSkills() {
   };
 }
 
-/** Official `{ prompts }`. pi_hive has no prompt library. */
+/** Official `{ prompts }` from the custom prompt store, newest first. */
 export function buildPrompts() {
-  return { prompts: [] };
+  return { prompts: listStoredPrompts() };
 }
 
 /** Colony ids whose runtime is live, when the caller can tell us. */
@@ -452,7 +453,7 @@ export function registerConfigRoutes(registry, ctx = {}) {
     ["/api/credentials", getCredentials, "official credential list; pi_hive is env-only"],
     ["/api/credentials/specs", getCredentialSpecs, "official credential specs; none registered"],
     ["/api/skills", getSkills, "official aggregated skills from colony skills/ dirs"],
-    ["/api/prompts", getPrompts, "official prompt list; pi_hive has no prompt library"],
+    ["/api/prompts", getPrompts, "the stored custom prompts, newest first"],
     ["/api/discover", discover, "official agent discovery over pi_hive colonies"],
   ];
 

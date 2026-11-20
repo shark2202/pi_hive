@@ -43,7 +43,7 @@
     "derivation": "api.get/post/put/patch/delete/upload + apiUrl + subscribeSse call sites, plus the exported types in src/api/types.ts"
   },
   "generated_at": "2026-11-19T10:10:50.368Z",
-  "revised_at": "2026-11-20T08:52:01+08:00",
+  "revised_at": "2026-11-20T08:57:53+08:00",
   "revision": "1.3.0",
   "domains": [
     "colonies",
@@ -93,8 +93,8 @@
       "workers": 7
     },
     "by_status": {
-      "implemented": 146,
-      "partial": 25,
+      "implemented": 150,
+      "partial": 21,
       "shell-only": 0,
       "missing": 0
     },
@@ -132,8 +132,8 @@
       "response_type": "{deleted, purged}",
       "sse": false,
       "sse_events": [],
-      "pi_hive_status": "partial",
-      "notes": "Partial compatibility: explicit 400: pi_hive has no agents store. real handler, but the official capability has no pi_hive backing store (explicit 400 or empty collection).",
+      "pi_hive_status": "implemented",
+      "notes": "soft-deletes (metadata.deleted) or purges the colony an agent path names",
       "source": "agents.ts:11",
       "query": []
     },
@@ -147,8 +147,8 @@
       "response_type": "{ok}",
       "sse": false,
       "sse_events": [],
-      "pi_hive_status": "partial",
-      "notes": "Partial compatibility: explicit 400: pi_hive has no agents metadata store. real handler, but the official capability has no pi_hive backing store (explicit 400 or empty collection).",
+      "pi_hive_status": "implemented",
+      "notes": "writes icon (and only icon) into the colony's metadata.json",
       "source": "agents.ts:18",
       "query": []
     },
@@ -1590,8 +1590,8 @@
       "response_type": "CustomPrompt",
       "sse": false,
       "sse_events": [],
-      "pi_hive_status": "partial",
-      "notes": "Partial compatibility: explicit 400: pi_hive has no prompt library. real handler, but the official capability has no pi_hive backing store (explicit 400 or empty collection).",
+      "pi_hive_status": "implemented",
+      "notes": "creates a custom prompt (minted id, skills/tags normalized)",
       "source": "prompts.ts:22",
       "query": []
     },
@@ -1605,8 +1605,8 @@
       "response_type": "{deleted}",
       "sse": false,
       "sse_events": [],
-      "pi_hive_status": "partial",
-      "notes": "Partial compatibility: explicit 400: pi_hive has no prompt library. real handler, but the official capability has no pi_hive backing store (explicit 400 or empty collection).",
+      "pi_hive_status": "implemented",
+      "notes": "deletes a stored prompt; 404 for an unknown id",
       "source": "prompts.ts:61",
       "query": []
     },

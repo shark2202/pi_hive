@@ -120,7 +120,7 @@
 
 | Feature | Status | Notes |
 |---|---|---|
-| HTTP API | 🟡 | 171 official routes: 107 implemented + 64 partial + 0 missing; partials are explicit unsupported/limited responses |
+| HTTP API | 🟡 | 171 official routes: 150 implemented + 21 partial + 0 missing; every partial is an explicit 4xx, never a fake success |
 | SSE | ✅ | Per-session events replay + tail from the durable `events.jsonl`; chat deltas + colony events |
 | CLI | 🟡 | serve/colony/chat/worker/playbook/tracker; no skill/mcp/janitor |
 | Official Hive frontend (forked at `frontend/`, built here) | ✅ | Fork source + dist live in this repo; served at `/`; desktop chat verified end-to-end (Queen reply over SSE, last verified 2026-11-19 — not re-run: no model key in this environment); mobile official layout is desktop-first and squeezed |
@@ -135,6 +135,8 @@
 |---|---|---|
 | Multi-user / RBAC | ⬜ | Single user |
 | Secrets redaction | 🟡 | Env key not logged; no credential vault |
+| Custom prompt library | ✅ | `hiveHome()/prompts/prompts.json`; create mints the id and normalizes skills/tags, delete is by id, list is newest first |
+| Agent delete / metadata | ✅ | An agent is a colony dir: soft delete sets `metadata.deleted`, `purge` removes `colonies/<name>` + `agents/<name>`, `PATCH` writes `icon` only |
 | Workspace/cwd binding | ✅ | Colony `workspace` or `PI_HIVE_WORKSPACE`; file/terminal tools scoped to it |
 | Cost accounting | ⬜ | No token/$ metering |
 | Budget hard stop | ⬜ | Turn limits only |
